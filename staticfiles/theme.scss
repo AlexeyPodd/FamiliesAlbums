@@ -1,0 +1,30 @@
+$primary: #444444;
+
+.card-photo:hover{
+    background-color: rgba(0, 0, 0, 0.03);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.17);
+}
+
+.card.card-button{
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.card-button-active:hover{
+    background-color: #666666;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.card.card-private{
+    background-color: #C2C2C2;
+}
+
+p.description{
+    text-indent: 30px;
+}
+
+.img-avatar{
+    object-fit: cover;
+    object-position: center;
+}
+
+@import './bootstrap/scss/bootstrap';

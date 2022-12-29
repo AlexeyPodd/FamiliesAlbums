@@ -1,0 +1,82 @@
+{% extends 'mainapp/base/base.html' %}
+
+{% block breadcrumbs %}
+{% include 'mainapp/base/breadcrumbs.html' %}
+{% endblock breadcrumbs %}
+
+{% block content %}
+<div class="container-fluid flex-grow-1"{% if photo.is_private %} style="background-color: #D1D1D1;"{% endif %}>
+    <div class="container-xxl mt-2">
+        <div class="row">
+            <div class="col-6 col-md-3 order-first" style="height: 100px;">
+                <div class="card w-100 h-100 card-button{% if previous_photo_url %} card-button-active{% endif %}" aria-label="Previous photo">
+                    <div class="card-body text-center">
+                        <p class="h1">&laquo;</p>
+                        {% if previous_photo_url %}
+                        <a href="{{ previous_photo_url }}" class="stretched-link"></a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6 order-last order-md-2 f-flex justify-content-center text-center">
+                <h2>{{ photo.title }}</h2>
+                <div class="row">
+                    <div class="col-4 pr-1 d-flex align-items-end">
+                        {% if owner_slug == request.user.username_slug %}
+                        <a href="{% url 'album_edit' username_slug=owner_slug album_slug=album.slug %}#{{ photo.slug }}" class="btn btn-outline-primary w-100">Edit</a>
+                        {% else %}
+                        <form action="{% url 'add_to_favorites' %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <button type="submit" name="photo" value="{{ photo.slug }}" class="btn btn-outline-primary w-100{% if in_favorites %} disabled" aria-disabled="true"{% else %}"{% endif %}>Add to Favorites</button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="col-4 px-1">
+                        {% if photo.location %}
+                        <p class="card-text">{{ photo.location }}
+                        {% endif %}
+                        {% if photo.date_start or photo.date_end %}
+                        {% if photo.location %}<br>{% else %}<p class="card-text">{% endif %}
+                        {{ photo.date_start|default_if_none:'' }} - {{ photo.date_end|default_if_none:'' }}
+                        {% endif %}
+                        {% if owner_slug != request.user.username_slug %}
+                        {% if photo.location or photo.date_start or photo.date_end %}
+                        <br>
+                        {% else %}
+                        <p class="card-text">
+                        {% endif %}Owner: <a href="{% url 'user_profile' owner_slug %}">{{ owner_name }}</a>
+                        {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-4 pl-1 d-flex align-items-end">
+                        <a href="{% url 'download' %}?photo={{ photo.slug }}" class="btn btn-outline-primary w-100">Download</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3 order-2 order-md-last" style="height: 100px;">
+                <div class="card w-100 h-100 card-button{% if next_photo_url %} card-button-active{% endif %}" aria-label="Next photo">
+                    <div class="card-body text-center">
+                        <p class="h1">&raquo;</p>
+                        {% if next_photo_url %}
+                        <a href="{{ next_photo_url }}" class="stretched-link"></a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="row mt-2">
+            <div class="col-12">
+                <img src="{{ photo.original.url }}" alt="" style="width: 100%; height: auto; max-height: 750px; object-fit: contain;">
+            </div>
+        </div>
+        {% if photo.description %}
+        <div class="row mt-3">
+            <div class="col-12">
+                <p class="description">{{ photo.description }}</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

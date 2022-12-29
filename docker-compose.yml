@@ -1,0 +1,26 @@
+version: "3"
+
+services:
+  django:
+    build: .
+    container_name: django
+    command: python3 manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/usr/src/familie_albums
+    ports:
+      - "8000:8000"
+      - "587:587"
+    environment:
+      - DEBAG=1
+      - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1
+    depends_on:
+      - mysql
+  mysql:
+    image: mysql
+    container_name: mysql
+    environment:
+      MYSQL_DATABASE: 'db_django'
+      MYSQL_ROOT_PASSWORD: 'password'
+    restart: always
+    volumes:
+      - ./mysql_db:/var/lib/mysql

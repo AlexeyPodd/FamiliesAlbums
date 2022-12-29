@@ -1,0 +1,71 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-xxl">
+    <div class="row">
+
+<!--        Favorites photos-->
+        {% if not page_obj.has_previous %}
+        <div class="col-md-6 col-xl-4 p-4 d-flex align-items-stretch">
+            <div class="card p-3 w-100" style="border: 8px solid #D8CA6F; border-radius: 4%">
+                <div class="col-12 mb-3">
+                    <div class="text-center">
+                        <h5 class="card-title h1">Favorites photos</h5>
+                    </div>
+                </div>
+                <div class="col-12 d-flex justify-content-center">
+                    <img src="{% static 'images/favorites.ico' %}" alt="" style="width: 100%; height: auto; max-height: 400px; object-fit: contain;">
+                </div>
+                <div class="col-12 mt-auto mb-3">
+                    <div class="text-center">
+                        <p class="card-text">{% with photos_amount=request.user.photo_in_users_favorites.all.count %}{% if photos_amount %}{{ photos_amount }} photo{% if photos_amount > 1 %}s{% endif %}{% else %}empty{% endif %}{% endwith %}</p>
+                        <a href="{% url 'favorites_photos' request.user.username_slug %}" class="btn btn-primary w-50">View</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+<!--        Favorites albums-->
+        {% for album in albums %}
+        <div class="col-md-6 col-xl-4 p-4 d-flex align-items-stretch">
+            <div class="card p-3 w-100" id="{{ album.slug }}" style="border: 8px solid rgba(0, 0, 0, 0.35); border-radius: 4%">
+                <div class="col-12 d-flex justify-content-center">
+                    <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 400px; object-fit: contain;">
+                </div>
+                <div class="col-12 mt-auto mb-3">
+                    <div class="text-center">
+                        <h5 class="card-title">{{ album.title }}</h5>
+                        <p class="card-text">{% with photos_amount=album.photos_set.all.count %}{% if photos_amount %}{{ photos_amount }} photo{% if photos_amount > 1 %}s{% endif %}{% else %}empty{% endif %}{% endwith %}</p>
+                        {% if album.location %}
+                        <p class="card-text">{{ album.location }}
+                        {% endif %}
+                        {% if album.date_start or album.date_end %}
+                        {% if album.location %}<br>{% else %}</p><p class="card-text">{% endif %}
+                        {{ album.date_start|default_if_none:'' }} - {{ album.date_end|default_if_none:'' }}</p>
+                        {% endif %}
+                        <a href="{{ album.get_absolute_url }}" class="btn btn-primary w-75">View Album</a>
+                        {% with owner=album.owner %}
+                        <p>Owner: <a href="{% url 'user_profile' owner.username_slug %}">{{ owner.username }}</a></p>
+                        {% endwith %}
+
+                        <form action="{% url 'remove_from_favorites' %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <button type="submit" name="album" value="{{ album.slug }}" class="btn btn-sm btn-outline-primary w-75">Remove from Favorites</button>
+                        </form>
+                        <form action="{% url 'save_album' %}" method="post">
+                            {% csrf_token %}
+                            <button type="submit" name="album" value="{{ album.slug }}" class="btn btn-sm btn-outline-primary w-75 mt-1">Save to My Albums</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{% include 'mainapp/base/album_pagination.html' %}
+{% endblock content %}

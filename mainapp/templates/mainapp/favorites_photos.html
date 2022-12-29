@@ -1,0 +1,58 @@
+{% extends 'mainapp/base/base.html' %}
+
+{% block content %}
+<div class="container-fluid flex-grow-1">
+
+    {% include 'mainapp/base/album_pagination.html' %}
+
+    <div class="container-xxl">
+        <div class="row d-flex justify-content-center">
+            {% for photo in photos %}
+            <div class="col-6 col-md-4 col-xl-3 d-flex align-items-stretch my-4">
+                <div class="card w-100 border-0" id="{{ photo.slug }}">
+                    <div class="card-body">
+                        <div class="card w-100 h-100">
+                            <div class="card-body card-photo text-center">
+                                <p class="card-title">{{ photo.title }}</p>
+                                <img src="{{ photo.original.url }}" alt="" style="width: 100%; height: auto; max-height: 300px; object-fit: contain;">
+                                <a href="{% url 'photo' username_slug=photo.album.owner.username_slug album_slug=photo.album.slug photo_slug=photo.slug %}" class="stretched-link"></a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="w-100 text-center">
+                        <form action="{% url 'remove_from_favorites' %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <button type="submit" name="photo" value="{{ photo.slug }}" class="btn btn-sm btn-outline-primary w-75">Remove from Favorites</button>
+                        </form>
+
+                        {% if my_albums %}
+                        <form action="{% url 'save_photo_to_album' %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.path }}">
+                            <div class="dropdown">
+                                <button class="btn btn-sm btn-outline-primary dropdown-toggle mt-1 w-75" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Save to album:
+                                </button>
+                                <ul class="dropdown-menu">
+                                    {% for album in my_albums %}
+                                    <li>
+                                        <button type="submit" name="data" value="photo:{{ photo.slug }}, album:{{ album.slug }}" class="dropdown-item">{{ album.title }}</button>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </form>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% include 'mainapp/base/album_pagination.html' %}
+
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block breadcrumbs %}
+{% include 'mainapp/base/breadcrumbs.html' %}
+{% endblock breadcrumbs %}
+
+{% block content %}
+<div class="container-xxl">
+    <div class="row">
+
+        {% for album in albums %}
+        <div class="col-md-6 col-xl-4 p-4 d-flex align-items-stretch">
+            <div class="card p-3 w-100" style="{% if album.is_private %}background-color: rgba(0, 0, 0, 0.18); border: 8px solid #444444; {% else %}border: 8px solid rgba(0, 0, 0, 0.35); {% endif %}border-radius: 4%">
+                <div class="col-12 d-flex justify-content-center">
+                    <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 400px; object-fit: contain;">
+                </div>
+                <div class="col-12 mt-auto mb-3">
+                    <div class="text-center">
+                        <h5 class="card-title">{{ album.title }}</h5>
+                        <p class="card-text">{% with photos_amount=album.photos_set.all.count %}{% if photos_amount %}{{ photos_amount }} photo{% if photos_amount > 1 %}s{% endif %}{% else %}empty{% endif %}{% endwith %}</p>
+                        {% if album.location %}
+                        <p class="card-text">{{ album.location }}
+                        {% endif %}
+                        {% if album.date_start or album.date_end %}
+                        {% if album.location %}<br>{% else %}</p><p class="card-text">{% endif %}
+                        {{ album.date_start|default_if_none:'' }} - {{ album.date_end|default_if_none:'' }}</p>
+                        {% else %}
+                        </p>
+                        {% endif %}
+                        <a href="{{ album.get_absolute_url }}" class="btn btn-primary">View Album</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+    </div>
+    {% if owner_slug == request.user.username_slug %}
+    <div class="p-3 row d-flex justify-content-center">
+        <a href="{% url 'album_create' owner_slug %}" class="btn btn-primary btn-lg col-9 col-md-6 col-xl-4">Create new album</a>
+    </div>
+    {% endif %}
+</div>
+
+<!--Pagination-->
+{% include 'mainapp/base/album_pagination.html' %}
+{% endblock %}

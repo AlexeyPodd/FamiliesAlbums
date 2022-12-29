@@ -1,0 +1,6 @@
+materials.txt
+media/
+mysql_db/
+.dockerignore
+photoalbums/settings.py
+static/CACHE/

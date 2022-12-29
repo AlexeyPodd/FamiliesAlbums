@@ -1,0 +1,55 @@
+{% load static %}
+<nav class="navbar navbar-dark bg-primary navbar-expand-lg sticky-top">
+        <div class="container-xxl">
+            <a href="{% url 'main' %}" class="navbar-brand fw-bold">
+                <img src="{% static 'images/main.ico' %}" width=40 alt="" class="d-inline-block">
+                Family Photos
+            </a>
+            <!--toggle button for mobile nav-->
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#main-nav" aria-controls="main-nav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <div class="collapse navbar-collapse justify-content-between" id="main-nav">
+                <div class="navbar-nav">
+                    {% if request.user.is_authenticated %}
+                    <a href="{% url 'user_albums' request.user.username_slug %}" class="nav-link{% if current_section == 'my_albums' %} active" aria-current="page{% endif %}">My Albums</a>
+                    <a href="{% url 'favorites' request.user.username_slug %}" class="nav-link{% if current_section == 'favorites' %} active" aria-current="page{% endif %}">Favorites</a>
+                    <a href="{% url 'recognition_main' %}" class="nav-link{% if current_section == 'recognition_main' %} active" aria-current="page{% endif %}">Recognition</a>
+                    {% else %}
+                    <a href="{% url 'about' %}" class="nav-link{% if current_section == 'about' %} active" aria-current="page{% endif %}">About</a>
+                    {% endif %}
+                </div>
+                <div class="navbar-nav col-lg-5">
+                    <form class="d-flex w-100 input-group" role="search" action="{% url 'search' %}">
+                        <span class="input-group-text">
+                            <img src="{% static 'images/search.svg' %}" alt="">
+                        </span>
+                        <input type="search" id="search" class="form-control" placeholder="Search" aria-label="Search" name="q" value="{{ searching_request }}">
+                    </form>
+                </div>
+                {% if request.user.is_authenticated %}
+                <div class="navbar-nav">
+                    <a href="{% url 'about' %}" class="nav-link{% if current_section == 'about' %} active" aria-current="page{% endif %}">About</a>
+
+                    <div class="dropdown">
+                        <a class="nav-link btn btn-light dropdown-toggle text-primary w-40" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <img src="{% if request.user.avatar %}{{ request.user.avatar.url }}{% else %}{% static 'images/person-circle.svg' %}{% endif %}" alt="" width=30 class="rounded-circle">
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item{% if current_section == 'profile' %} active" aria-current="page{% endif %}" href="{% url 'user_profile' username_slug=request.user.username_slug %}">Profile</a></li>
+                            <li><a class="dropdown-item{% if current_section == 'profile_settings' %} active" aria-current="page{% endif %}" href="{% url 'user_settings' username_slug=request.user.username_slug %}">Settings</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{% url 'logout' %}">Log out</a></li>
+                        </ul>
+                    </div>
+                </div>
+                {% else %}
+                <div class="navbar-nav">
+                    <a href="{% url 'login' %}" class="nav-link{% if current_section == 'login' %} active" aria-current="page{% endif %}">Log in</a>
+                    <a href="{% url 'django_registration_register' %}" class="nav-link{% if current_section == 'signup' %} active" aria-current="page{% endif %}">Sign up</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </nav>

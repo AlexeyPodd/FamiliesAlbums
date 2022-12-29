@@ -1,0 +1,107 @@
+{% extends 'mainapp/base/form_base.html' %}
+{% load static %}
+{% load accounts_tags %}
+
+{% block fields %}
+<!--Album's descriptions-->
+<div class="card p-3 p-md-1 p-lg-3 w-100">
+    <div class="row">
+        <div class="col-12 col-md-3 d-flex justify-content-center align-items-start">
+            <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; object-fit: contain;">
+        </div>
+        <div class="col-12 col-md-9">
+            <div class="card-body text-start">
+                {% for field in form %}
+                <div class="row d-flex justify-content-evenly{% if field.name != 'date_start' %} mb-3{% endif %}">
+                    <div class="col-12 col-md-3 col-lg-2">
+                        {% if field.name != 'date_end' %}
+                        <label for="{{ field.id_for_label }}">{{field.label}}:</label>
+                        {% endif %}
+                    </div>
+                    <div class="col-12 col-md-9 col-lg-8">
+                        <div class="row{% if field.errors %} is-invalid{% else %} mb-2{% endif %}">
+                            {% if field.errors %}
+                                {{ field|add_attrs:"is-invalid" }}
+                            {% else %}
+                                {{ field }}
+                            {% endif %}
+                            {% if field.errors %}
+                            <div class="invalid-feedback">
+                                {% for err in field.errors %}
+                                <p>{{ err }}</p>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ photos_formset.management_form }}
+
+{% if album.photos_set.all %}
+<!--First submit button-->
+<div class="d-flex justify-content-center mt-3">
+    <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>
+</div>
+
+<div class="container-xxl d-flex justify-content-center mt-3">
+    <h3 class="col-12 text-center my-3">Edit album's photos</h3>
+</div>
+
+<!--Descriptions of album's photos-->
+<div class="row">
+    {{ photos_formset.non_form_errors }}
+    {% for form in photos_formset %}
+    <div class="col-12 col-md-6 d-flex align-items-stretch" id="{{ form.instance.slug }}">
+        <div class="card p-3 my-3 w-100 d-flex align-items-end">
+            <div class="col-12 d-flex justify-content-center align-items-start">
+                <img src="{{ form.instance.original.url }}" alt="" style="width: 100%; height: auto; max-height: 200px; object-fit: contain;">
+            </div>
+            <div class="col-12 mt-auto">
+                <div class="card-body text-start">
+
+                    {{ form.id }}
+                    {{ form.non_field_errors }}
+
+                    {% for field in form.visible_fields %}
+                    {% if field.name != 'is_private' or not album.is_private %}
+                    <div class="row d-flex justify-content-evenly{% if field.name != 'date_start' %} mb-1{% endif %}">
+                        <div class="col-12 col-md-3 col-lg-2">
+                            {% if field.name != 'date_end' %}
+                            <label for="{{ field.id_for_label }}">{{field.label}}:</label>
+                            {% endif %}
+                        </div>
+                        <div class="col-12 col-md-9 col-lg-8">
+                            <div class="row{% if field.errors %} is-invalid{% else %} mb-2{% endif %}">
+                                {% if field.errors %}
+                                    {{ field|add_attrs:"is-invalid" }}
+                                {% else %}
+                                    {{ field }}
+                                {% endif %}
+                                {% if field.errors %}
+                                <div class="invalid-feedback">
+                                    {% for err in field.errors %}
+                                    <p>{{ err }}</p>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+
+                </div>
+            </div>
+        </div>
+    </div>
+{% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

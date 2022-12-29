@@ -1,0 +1,7 @@
+{% extends 'accounts/base/form_base.html' %}
+
+{% block bottom_additional_content %}
+    <div class="d-flex justify-content-center">
+        <a class="text-decoration-none" href="{% url 'password_reset' %}"><small>Forgot your password?</small></a>
+    </div>
+{% endblock %}

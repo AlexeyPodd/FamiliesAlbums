@@ -1,0 +1,40 @@
+{% extends 'mainapp/base/base.html' %}
+{% load accounts_tags %}
+
+{% block breadcrumbs %}
+{% include 'mainapp/base/breadcrumbs.html' %}
+{% endblock breadcrumbs %}
+
+{% block content %}
+<div class="container-xxl d-flex justify-content-center">
+    <h2 class="col-12 text-center my-3">{{title}}</h2>
+</div>
+<div class="container-xxl d-flex justify-content-center">
+    <div class="card col-12 border-0">
+        <div class="card-body p-4 p-md-2 p-lg-4">
+            <form enctype="multipart/form-data" method="post">
+                {% csrf_token %}
+
+                <!--Errors-->
+                {% block non_field_errors %}
+                <div class="text-danger text-center">
+                    {% for error in form.non_field_errors %}
+                    <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+                {% endblock %}
+
+                {% block fields %}
+                {% endblock %}
+
+                <!--Submit button-->
+                {% block submit_button %}
+                <div class="d-flex justify-content-center mt-3">
+                    <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>
+                </div>
+                {% endblock %}
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

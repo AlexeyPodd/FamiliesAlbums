@@ -1,0 +1,31 @@
+{% extends 'mainapp/base/form_base.html' %}
+{% load accounts_tags %}
+
+<!--Fields-->
+{% block fields %}
+{% for field in form %}
+<div class="row d-flex justify-content-evenly{% if field.name != 'date_start' %} mb-4{% endif %}">
+    <div class="col-12 col-md-3 col-lg-2">
+        {% if field.name != 'date_end' %}
+        <label for="{{ field.id_for_label }}">{{field.label}}:</label>
+        {% endif %}
+    </div>
+    <div class="col-12 col-md-9 col-lg-6">
+        <div class="row{% if field.errors %} is-invalid{% else %} mb-4{% endif %}">
+            {% if field.errors %}
+                {{ field|add_attrs:"is-invalid" }}
+            {% else %}
+                {{ field }}
+            {% endif %}
+            {% if field.errors %}
+            <div class="invalid-feedback">
+                {% for err in field.errors %}
+                <p>{{ err }}</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,63 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-xxl d-flex justify-content-center flex-grow-1">
+    <div class="card flex-grow-1 m-4">
+        <div class="card-body p-5">
+            <div class="row">
+                <div class="col col-4">
+
+<!--                    Avatar-->
+                    <div class="ratio ratio-1x1 rounded-circle overflow-hidden">
+                        <img src="{% if owner.avatar %}{{ owner.avatar.url }}{% else %}{% static 'images/person-circle.svg' %}{% endif %}" alt="" class="img-avatar">
+                    </div>
+                    {% if not request.user.is_authenticated or request.user.username_slug != owner.username_slug %}
+                    <div class="d-flex justify-content-center mt-4">
+                        <a href="{% url 'user_albums' username_slug=owner.username_slug %}" class="btn btn-primary btn-lg w-50">Albums</a>
+                    </div>
+                    {% else %}
+                    <div class="mt-4">
+                        <a href="{% url 'user_settings' username_slug=request.user.username_slug %}">Profile settings</a>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col col-8">
+
+<!--                    Username-->
+                    <h2 class="display-1">{{ owner.username }}</h2>
+
+<!--                    Contacts-->
+                    {% if owner.facebook or owner.instagram or owner.telegram or owner.whatsapp %}
+                    <p>
+                        &nbsp;|&nbsp;
+                        {% if owner.facebook %}
+                        <a href="{{ owner.facebook }}">Facebook</a>
+                        &nbsp;|&nbsp;
+                        {% endif %}
+                        {% if owner.instagram %}
+                        <a href="{{ owner.instagram }}">Instagram</a>
+                        &nbsp;|&nbsp;
+                        {% endif %}
+                        {% if owner.telegram %}
+                        <a href="{{ owner.telegram }}">Telegram</a>
+                        &nbsp;|&nbsp;
+                        {% endif %}
+                        {% if owner.whatsapp %}
+                        <a href="{{ owner.whatsapp }}">whatsapp</a>
+                        &nbsp;|&nbsp;
+                        {% endif %}
+                    </p>
+                    {% endif %}
+
+<!--                    About himself-->
+                    {% if owner.about %}
+                    <p class="description mt-5">{{ owner.about }}</p>
+                    {% endif %}
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

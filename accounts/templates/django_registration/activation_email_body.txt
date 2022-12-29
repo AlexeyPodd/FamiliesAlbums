@@ -1,0 +1,9 @@
+Hello!
+You have successfully registered on our website {{ site }}.
+The next step is to activate your account.
+You have {{ expiration_days }} days for that.
+
+activation_key: {{ activation_key }}
+scheme: {{ scheme }}
+username: {{ user.username}}
+your activasion link: http://{{ site }}/accounts/activate/{{ activation_key }}

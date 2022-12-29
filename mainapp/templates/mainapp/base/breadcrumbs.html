@@ -1,0 +1,28 @@
+<div style="background-color: rgba(0, 0, 0, 0.07);">
+    <div class="container-xxl pb-1">
+        {% if owner_slug != request.user.username_slug %}
+        >
+        <a href="{% url 'user_profile' owner_slug %}">
+            <small>{{ owner_slug }}</small>
+        </a>
+        {% endif %}
+        >
+        <a href="{% url 'user_albums' owner_slug %}">
+            <small>{% if owner_slug == request.user.username_slug %}My albums{% else %}{{ owner_slug }}'s albums{% endif %}</small>
+        </a>
+
+        {% if album %}
+        >
+        <a href="{% url 'album' username_slug=owner_slug album_slug=album.slug %}">
+            <small>{{ album.title }}</small>
+        </a>
+        {% endif %}
+
+        {% if photo %}
+        >
+        <a href="{% url 'photo' username_slug=owner_slug album_slug=album.slug photo_slug=photo.slug %}">
+            <small>{{ photo.title }}</small>
+        </a>
+        {% endif %}
+    </div>
+</div>
