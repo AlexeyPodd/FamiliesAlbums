@@ -1,0 +1,41 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-xxl">
+    <div class="row">
+
+        {% for album in albums %}
+        <div class="col-md-6 col-xl-4 p-4 d-flex align-items-stretch">
+            <div class="card p-3 w-100" style="{% if album.is_private %}background-color: rgba(0, 0, 0, 0.18); border: 8px solid #444444; {% else %}border: 8px solid {% if album.public_photos == album.processed_photos %}rgba(0, 0, 0, 0.35){% elif album.processed_photos == 0 %}rgba(190, 53, 53, 0.35){% else %}rgba(190, 190, 53, 0.35){% endif %}; {% endif %}border-radius: 4%">
+                <div class="col-12 d-flex justify-content-center">
+                    <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 400px; object-fit: contain;">
+                </div>
+                <div class="col-12 mt-auto mb-3">
+                    <div class="text-center">
+                        <h5 class="card-title">{{ album.title }}</h5>
+                        <p class="card-text">
+                            {% if album.is_private %}
+                            albums is private
+                            {% else %}
+                            {% if album.public_photos != album.processed_photos %}{{ album.processed_photos }}/{{ album.public_photos }}{% else %}all{% endif %} public photos processed
+                            {% endif %}
+                        </p>
+                        <a href="{% url 'processing_album_confirm' album.slug %}" class="btn btn-primary"{% if album.is_private or album.public_photos == album.processed_photos %} disabled{% endif %}>
+                            {% if album.public_photos == album.processed_photos or album.processed_photos == 0 %}
+                            Process Album
+                            {% else %}
+                            Process New Photos
+                            {% endif %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!--Pagination-->
+{% include 'mainapp/base/album_pagination.html' %}
+{% endblock %}

@@ -9,6 +9,7 @@ from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.generic import ListView, TemplateView, CreateView, UpdateView
 from django.views.generic.detail import SingleObjectMixin, DetailView
+from django.db.models import Count
 
 from accounts.models import User
 from .forms import *
@@ -53,9 +54,9 @@ class UserAlbumsView(ListView):
 
     def get_queryset(self):
         if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs['username_slug']:
-            queryset = self.model.objects.filter(owner__pk=self.request.user.pk)
+            queryset = self.model.objects.filter(owner__pk=self.request.user.pk).annotate(Count('photos'))
         else:
-            queryset = self.model.objects.filter(owner__username_slug=self.kwargs['username_slug'], is_private=False)
+            queryset = self.model.objects.filter(owner__username_slug=self.kwargs['username_slug'], is_private=False).annotate(Count('photos'))
             if not queryset:
                 raise Http404
         return queryset

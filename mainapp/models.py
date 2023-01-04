@@ -27,6 +27,9 @@ class Albums(models.Model):
     def get_absolute_url(self):
         return reverse('album', kwargs={'username_slug': self.owner.username_slug, 'album_slug': self.slug})
 
+    # def count_processed_photos(self):
+    #     return self.photos_set.
+
     def __str__(self):
         return self.title
 
@@ -49,6 +52,7 @@ class Photos(models.Model):
     album = models.ForeignKey('Albums', on_delete=models.CASCADE, verbose_name='Album')
     original = models.ImageField(upload_to=get_photo_save_path, verbose_name="Original")
     in_users_favorites = models.ManyToManyField(AUTH_USER_MODEL, blank=True, related_name='photo_in_users_favorites', verbose_name="In Users' Favorites")
+    faces_extracted = models.BooleanField(default=False, verbose_name='Faces Extracted')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

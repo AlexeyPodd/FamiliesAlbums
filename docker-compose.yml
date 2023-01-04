@@ -13,7 +13,20 @@ services:
     environment:
       - DEBAG=1
       - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1
+      - CELERY_BROKER=redis://redis:6379/0
+      - CELERY_BACKEND=redis://redis:6379/0
     depends_on:
+      - mysql
+      - redis
+  celery:
+    build: .
+    container_name: celery
+    command: celery -A photoalbums worker -l INFO
+    volumes:
+      - .:/usr/src/familie_albums
+    depends_on:
+      - django
+      - redis
       - mysql
   mysql:
     image: mysql
@@ -24,3 +37,6 @@ services:
     restart: always
     volumes:
       - ./mysql_db:/var/lib/mysql
+  redis:
+    container_name: redis
+    image: "redis:alpine"

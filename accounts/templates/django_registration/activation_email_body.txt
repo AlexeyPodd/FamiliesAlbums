@@ -5,5 +5,5 @@ You have {{ expiration_days }} days for that.
 
 activation_key: {{ activation_key }}
 scheme: {{ scheme }}
-username: {{ user.username}}
+username: {{ user.username }}
 your activasion link: http://{{ site }}/accounts/activate/{{ activation_key }}
