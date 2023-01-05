@@ -5,8 +5,16 @@ from django.views.generic import ListView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q
 
+import redis
+
 from mainapp.models import Albums
 from .tasks import zero_stage_process_album_task
+from photoalbums.settings import REDIS_HOST, REDIS_PORT
+
+
+redis_instance = redis.Redis(host=REDIS_HOST,
+                             port=REDIS_PORT,
+                             db=0)
 
 
 class AlbumsRecognitionView(LoginRequiredMixin, ListView):
@@ -55,6 +63,6 @@ def zero_stage_album_processing_view(request, album_slug):
     if request.user.username_slug != album.owner.username_slug:
         raise Http404
 
-    zero_stage_process_album_task.delay(album_slug)
+    zero_stage_process_album_task.delay(album.pk)
 
     return HttpResponse('Album has sent to processing.')

@@ -16,8 +16,10 @@ services:
       - CELERY_BROKER=redis://redis:6379/0
       - CELERY_BACKEND=redis://redis:6379/0
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
   celery:
     build: .
     container_name: celery
@@ -34,6 +36,10 @@ services:
     environment:
       MYSQL_DATABASE: 'db_django'
       MYSQL_ROOT_PASSWORD: 'password'
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
+      timeout: 20s
+      retries: 10
     restart: always
     volumes:
       - ./mysql_db:/var/lib/mysql
