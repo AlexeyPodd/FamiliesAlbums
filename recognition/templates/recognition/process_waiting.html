@@ -1,0 +1,42 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-xxl d-flex justify-content-center flex-grow-1 text-center">
+    <div class="row">
+        <div class="col-12">
+            <p class="h1 mt-2">Stage 1/6</p>
+        </div>
+        <div class="col-12">
+            <div class="card p-4 text-center flex-grow-1">
+                <div class="col col-12">
+                    <h2 class="card-title">{{ title }}</h2>
+                    <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 550px; object-fit: contain;">
+                </div>
+                <div class="col-12 mt-2">
+                    <p class="h5">
+                        {% if is_ready %}
+                        All
+                        {% else %}
+                        {{ number_of_processed_photos }}/{{ album.public_photos }}
+                        {% endif %}
+                        public photos processed
+                    </p>
+                </div>
+                <div class="col-12 my-3">
+                    {% if is_ready %}
+                    <p class="h4">We are ready to continue. You can press the button!</p>
+                    {% else %}
+                    <p class="h4">We are searching for faces on photos of this album. This may take some time.</p>
+                    <p class="h4">Please refresh this page until you see that all the photos have been processed.</p>
+                    <p class="h4">We will need you to do some verification of the result.</p>
+                    {% endif %}
+                </div>
+                <div class="col col-12 mt-auto">
+                        <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{% url 'verify_frames' album_slug=album.slug photo_slug=first_photo_slug %}"{% else %}aria-disabled="true"{% endif %}>Verify results</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

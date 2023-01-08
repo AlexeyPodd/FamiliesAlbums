@@ -11,5 +11,4 @@ def zero_stage_process_album_task(album_pk):
     logger.info(f"Starting to process (stage zero) {album_pk}")
     handler = ZeroStageHandler(album_pk)
     handler.handle()
-    handler.save_data_to_redis()
     return f"Album {album_pk} has passed zero stage (faces found)."
