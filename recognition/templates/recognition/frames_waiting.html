@@ -33,7 +33,7 @@
                     {% endif %}
                 </div>
                 <div class="col col-12 mt-auto">
-                        <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{% url 'verify_frames' album_slug=album.slug photo_slug=first_photo_slug %}"{% else %}aria-disabled="true"{% endif %}>Verify results</a>
+                    <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{% url 'verify_frames' album_slug=album.slug photo_slug=first_photo_slug %}"{% else %}aria-disabled="true"{% endif %}>Verify results</a>
                 </div>
             </div>
         </div>

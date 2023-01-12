@@ -221,13 +221,13 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
     slug_url_kwarg = 'album_slug'
     form_class = AlbumEditForm
     model = Albums
+    context_object_name = 'album'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
         context.update({'title': f'Edit album \"{self.object.title}\"',
                         'owner_slug': self.request.user.username_slug,
-                        'album': self.object,
                         'button_label': 'Save changes',
                         'photos_formset': self.photos_formset,
                         })
