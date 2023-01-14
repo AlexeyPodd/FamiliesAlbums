@@ -28,7 +28,7 @@ class BaseVerifyPatternForm(forms.Form):
 
 
 class BaseVerifyPatternFormset(forms.BaseFormSet):
-    def __init__(self, *args, album_pk, faces_amounts: tuple, number_of_verified_patterns: int, **kwargs):
+    def __init__(self, *args, album_pk, faces_amounts: tuple[int, ...], number_of_verified_patterns: int, **kwargs):
         super().__init__(*args, **kwargs)
         self._faces_amounts = faces_amounts
         self._number_of_verified_patterns = number_of_verified_patterns
@@ -44,3 +44,16 @@ class BaseVerifyPatternFormset(forms.BaseFormSet):
                     label=f"/media/temp_photos/album_{self._album_pk}/patterns/{index + 1}/{i}.jpg",
                     required=False,
                 )
+
+
+class GroupPatternsForm(forms.Form):
+    def __init__(self, *args, album_pk, single_patterns: tuple[int, ...], **kwargs):
+        super().__init__(*args, **kwargs)
+
+        for x in single_patterns:
+            self.fields[f'pattern_{x}'] = forms.BooleanField(
+                widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
+                                                  'style': 'width: 25px; height: 25px;'}),
+                label=f"/media/temp_photos/album_{album_pk}/patterns/{x}/1.jpg",
+                required=False,
+            )

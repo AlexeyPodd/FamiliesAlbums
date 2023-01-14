@@ -13,7 +13,7 @@ from django.db.models import Count, Q
 from django.views.generic.edit import FormMixin
 
 from mainapp.models import *
-from .forms import VerifyFramesForm, BaseVerifyPatternForm, BaseVerifyPatternFormset
+from .forms import VerifyFramesForm, BaseVerifyPatternForm, BaseVerifyPatternFormset, GroupPatternsForm
 from .tasks import face_searching_task, relate_faces_task
 from photoalbums.settings import REDIS_HOST, REDIS_PORT, REDIS_DATA_EXPIRATION_SECONDS, MEDIA_ROOT
 
@@ -340,7 +340,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         except TypeError:
             self._number_of_verified_patterns = 0
 
-        VerifyPatternFormset = formset_factory(BaseVerifyPatternForm,
+        VerifyPatternFormset = formset_factory(self.form_class,
                                                formset=BaseVerifyPatternFormset,
                                                extra=len(self._faces_amounts))
         self.formset = VerifyPatternFormset(faces_amounts=self._faces_amounts,
@@ -371,7 +371,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         except TypeError:
             self._number_of_verified_patterns = 0
 
-        VerifyPatternFormset = formset_factory(BaseVerifyPatternForm,
+        VerifyPatternFormset = formset_factory(self.form_class,
                                                formset=BaseVerifyPatternFormset,
                                                extra=len(self._faces_amounts))
         self.formset = VerifyPatternFormset(request.POST, faces_amounts=self._faces_amounts,
@@ -415,10 +415,10 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         if self.formset.has_changed():
             return reverse_lazy('verify_patterns', kwargs={'album_slug': self.object.slug})
         else:
-            return reverse_lazy('recognition_main')
+            return reverse_lazy('group_patterns', kwargs={'album_slug': self.object.slug})
 
     def _replace_odd_faces_to_new_pattern(self, patterns_amount, patterns_dir):
-        for i, cleaned_data in enumerate(self.formset.cleaned_data, self._number_of_verified_patterns + 1):
+        for i, cleaned_data in enumerate(self.formset.cleaned_data, 1):
             # Removing odd faces from existing pattern to new
             faces_to_remove = []
             for face_name, to_remove in cleaned_data.items():
@@ -431,7 +431,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
                 redis_instance.hset(f"album_{self.object.pk}_pattern_{patterns_amount}",
                                     "faces_amount", faces_amount)
                 for k, face_name in enumerate(faces_to_remove):
-                    # Moving face's data inside redis
+                    # Moving face's data in redis
                     face_data = redis_instance.hget(f"album_{self.object.pk}_pattern_{i}", face_name)
                     redis_instance.hset(f"album_{self.object.pk}_pattern_{patterns_amount}",
                                         face_name,
@@ -440,14 +440,15 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
                                           REDIS_DATA_EXPIRATION_SECONDS)
                     redis_instance.hdel(f"album_{self.object.pk}_pattern_{i}", face_name)
 
-                    # Moving face image inside temp directory
+                    # Moving face image in temp directory
                     if k == 0:
                         os.makedirs(os.path.join(patterns_dir, str(patterns_amount)))
                     old_path = os.path.join(patterns_dir, str(i), f"{face_name[5:]}.jpg")
                     new_path = os.path.join(patterns_dir, str(patterns_amount), f"{face_name[5:]}.jpg")
                     os.replace(old_path, new_path)
 
-            redis_instance.hincrby(f"album_{self.object.pk}", "number_of_verified_patterns")
+            if self.formset.forms[i-1].fields:
+                redis_instance.hincrby(f"album_{self.object.pk}", "number_of_verified_patterns")
 
         return patterns_amount
 
@@ -478,7 +479,122 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             redis_instance.hset(f"album_{self.object.pk}", "current_stage", 4)
             redis_instance.hset(f"album_{self.object.pk}", "status", "processing")
             redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
-        elif int(redis_instance.hget(f"album_{self.object.pk}", "current_stage")) == 4 and \
+
+        if int(redis_instance.hget(f"album_{self.object.pk}", "current_stage")) == 4 and \
                 not self.formset.has_changed():
             redis_instance.hset(f"album_{self.object.pk}", "status", "completed")
             redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+
+class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
+    template_name = 'recognition/group_patterns.html'
+    model = Albums
+    slug_url_kwarg = 'album_slug'
+    form_class = GroupPatternsForm
+    context_object_name = 'album'
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if not (current_stage == 4 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == 5 and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+            raise Http404
+
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if not (current_stage == 4 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == 5 and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+            raise Http404
+
+        form = self.get_form()
+        if form.is_valid():
+            return self.form_valid(form)
+        else:
+            return self.form_invalid(form)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        context.update({
+            'title': f'Album \"{self.object}\" - verifying patterns',
+        })
+
+        return context
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs.update({'single_patterns': self._get_single_patterns(),
+                       'album_pk': self.object.pk})
+        return kwargs
+
+    def _get_single_patterns(self):
+        single_patterns = []
+        for x in range(1, int(redis_instance.hget(f"album_{self.object.pk}", "number_of_verified_patterns")) + 1):
+            if not redis_instance.hexists(f"album_{self.object.pk}_pattern_{x}", "person"):
+                single_patterns.append(x)
+        return tuple(single_patterns)
+
+    def form_valid(self, form):
+        self._group_patterns_into_people(form)
+        self._set_correct_status(form)
+        return super().form_valid(form)
+
+    def _group_patterns_into_people(self, form):
+        if any(form.cleaned_data.values()):
+            redis_instance.hincrby(f"album_{self.object.pk}", "people_amount")
+            new_person_number = redis_instance.hget(f"album_{self.object.pk}", "people_amount")
+            count = 0
+            for field_name, to_group in form.cleaned_data.items():
+                if to_group:
+                    count += 1
+                    redis_instance.hset(f"album_{self.object.pk}_{field_name}", "person", new_person_number)
+                    redis_instance.expire(f"album_{self.object.pk}_{field_name}", REDIS_DATA_EXPIRATION_SECONDS)
+                    redis_instance.hset(f"album_{self.object.pk}_person_{new_person_number}",
+                                        f"pattern_{count}", field_name[8:])
+            redis_instance.expire(f"album_{self.object.pk}_person_{new_person_number}", REDIS_DATA_EXPIRATION_SECONDS)
+
+        else:
+            for field_name in form.cleaned_data.keys():
+                redis_instance.hincrby(f"album_{self.object.pk}", "people_amount")
+                new_person_number = redis_instance.hget(f"album_{self.object.pk}", "people_amount")
+
+                redis_instance.hset(f"album_{self.object.pk}_{field_name}", "person", new_person_number)
+                redis_instance.expire(f"album_{self.object.pk}_{field_name}", REDIS_DATA_EXPIRATION_SECONDS)
+                redis_instance.hset(f"album_{self.object.pk}_person_{new_person_number}",
+                                    f"pattern_1", field_name[8:])
+                redis_instance.expire(f"album_{self.object.pk}_person_{new_person_number}",
+                                      REDIS_DATA_EXPIRATION_SECONDS)
+
+    def _set_correct_status(self, form):
+        if int(redis_instance.hget(f"album_{self.object.pk}", "current_stage")) == 4:
+            redis_instance.hset(f"album_{self.object.pk}", "current_stage", 5)
+            redis_instance.hset(f"album_{self.object.pk}", "status", "processing")
+            redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+        if int(redis_instance.hget(f"album_{self.object.pk}", "current_stage")) == 5 and \
+                not any(form.cleaned_data.values()):
+            redis_instance.hset(f"album_{self.object.pk}", "status", "completed")
+            redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    def get_success_url(self):
+        if self._get_single_patterns():
+            return reverse_lazy('group_patterns', kwargs={'album_slug': self.object.slug})
+        else:
+            return reverse_lazy('recognition_main')

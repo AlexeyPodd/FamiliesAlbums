@@ -12,4 +12,5 @@ urlpatterns = [
     path('process_album/<slug:album_slug>/waiting_patterns',
          AlbumPatternsWaitingView.as_view(), name='patterns_waiting'),
     path('process_album/<slug:album_slug>/verify_patterns', AlbumVerifyPatternsView.as_view(), name='verify_patterns'),
+    path('process_album/<slug:album_slug>/group_patterns', AlbumGroupPatternsView.as_view(), name='group_patterns'),
 ]
