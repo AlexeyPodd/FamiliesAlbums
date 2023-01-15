@@ -1,0 +1,40 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-xxl mt-2 text-center">
+
+    {% block heading %}
+    <div class="row my-3">
+        <div class="col-12">
+            <h2>{{ heading }}</h2>
+            <p class="h3">Stage {{ current_stage }}/{{ total_stages }}</p>
+        </div>
+    </div>
+    {% endblock %}
+
+    {% block info_card %}
+    <div class="card p-4 text-center flex-grow-1">
+        <div class="col-12">
+            <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 550px; object-fit: contain;">
+        </div>
+
+        {% block info %}
+        {% endblock %}
+
+        {% block instruction %}
+        <div class="col-12 my-3">
+            {% for instruction in instructions %}
+            <p class="h4">{{ instruction }}</p>
+            {% endfor %}
+        </div>
+        {% endblock %}
+
+        <div class="col-12 mt-auto">
+            <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{{ success_url }}"{% else %}aria-disabled="true"{% endif %}>{{ button_label }}</a>
+        </div>
+    </div>
+    {% endblock %}
+
+</div>
+{% endblock %}

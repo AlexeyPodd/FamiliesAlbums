@@ -3,25 +3,31 @@
 
 {% block content %}
 <div class="container-xxl d-flex justify-content-center flex-grow-1">
+
     <div class="card p-4 text-center flex-grow-1 m-4">
         <div class="col col-12">
             <h2 class="card-title">{{ title }}</h2>
             <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 550px; object-fit: contain;">
         </div>
         <div class="col-12 mt-2">
-            <p class="h5">{{ album.processed_photos }}/{{ album.public_photos }} public photos processed</p>
+            <p class="h5">
+                {{ album.processed_photos }}/{{ album.public_photos }} public photos processed
+            </p>
         </div>
         <div class="col-12 my-3">
-            <p class="h4">Processing album photos will take some time. After that, you will need to verify the result.</p>
-            <p class="h4">If you do not complete the procedure, the result will NOT be saved.</p>
+            {% for instruction in instructions %}
+            <p class="h4">{{ instruction }}</p>
+            {% endfor %}
         </div>
+
         <div class="col col-12 mt-auto">
             <form action="{% url 'find_faces' album.slug %}" method="post">
                 {% csrf_token %}
                 <input type="hidden" name="processing_stage" value="0">
-                <button class="btn btn-primary btn-lg w-50" type="submit">Start Album Processing</button>
+                <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>
             </form>
         </div>
     </div>
+
 </div>
 {% endblock %}

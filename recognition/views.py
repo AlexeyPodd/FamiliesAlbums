@@ -51,8 +51,15 @@ class AlbumProcessingConfirmView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
+        instructions = [
+            "Processing album photos will take some time. After that, you will need to verify the result.",
+            "If you do not complete the procedure, the result will NOT be saved.",
+        ]
+
         context.update({
-            'title': f'Album \"{self.object}\"',
+            'title': f'Album \"{self.object}\" - recognition',
+            'button_label': "Start people recognition",
+            'instructions': instructions,
         })
         return context
 
@@ -99,37 +106,57 @@ class AlbumFramesWaitingView(LoginRequiredMixin, DetailView):
         self.object = self.get_object()
         if request.user.username_slug != self.object.owner.username_slug:
             raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+
+        if current_stage != 1:
+            raise Http404
+
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
         try:
-            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+            number_of_processed_photos = int(redis_instance.hget(f"album_{self.object.pk}",
+                                                                 "number_of_processed_photos"))
         except TypeError:
-            raise Http404
+            number_of_processed_photos = 0
+
         status = redis_instance.hget(f"album_{self.object.pk}", "status")
-
-        if current_stage != 1:
-            raise Http404
-
         if status == "processing":
-            number_of_processed_photos = redis_instance.hget(f"album_{self.object.pk}", "number_of_processed_photos")
-            if number_of_processed_photos is None:
-                number_of_processed_photos = 0
-
-            context.update({
-                'title': f'Album \"{self.object}\" - waiting',
-                'is_ready': False,
-                'number_of_processed_photos': number_of_processed_photos,
-                'first_photo_slug': redis_instance.lindex(f"album_{self.object.pk}_photos", 0),
-            })
+            is_ready = False
+            instructions = [
+                "We are searching for faces on photos of this album. This may take some time.",
+                "Please refresh this page until you see that all the photos have been processed.",
+                "We will need you to do some verification of the result.",
+            ]
+            title = f'Album \"{self.object}\" - waiting'
         else:
-            context.update({
-                'title': f'Album \"{self.object}\" - ready to continue',
-                'is_ready': True,
-                'first_photo_slug': redis_instance.lindex(f"album_{self.object.pk}_photos", 0),
-            })
+            is_ready = True
+            instructions = [
+                "We are ready to continue. You can press the button!",
+            ]
+            title = f'Album \"{self.object}\" - ready to continue'
+
+        first_photo_slug = redis_instance.lindex(f"album_{self.object.pk}_photos", 0)
+
+        context.update({
+            'first_photo_slug': redis_instance.lindex(f"album_{self.object.pk}_photos", 0),
+            'heading': "Searching for faces on album's photos",
+            'current_stage': 1,
+            'total_stages': 6,
+            'instructions': instructions,
+            'is_ready': is_ready,
+            'title': title,
+            'number_of_processed_photos': number_of_processed_photos,
+            'button_label': "Verify frames",
+            'success_url': reverse_lazy('verify_frames', kwargs={'album_slug': self.object.slug,
+                                                                 'photo_slug': first_photo_slug}),
+        })
 
         return context
 
@@ -254,14 +281,25 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
+        current_photo_number = int(redis_instance.hget(f"album_{self.album.pk}", "number_of_processed_photos")) + 1
+        public_photos = self.album.photos_set.all().count()
+        instructions = [
+            "Please mark the faces of children under 10 and objects that are not faces.",
+            "They will be removed.",
+        ]
+        if self.object.slug == redis_instance.lindex(f"album_{self.album.pk}_photos", -1):
+            button_label = "Next stage"
+        else:
+            button_label = "Next photo"
+
         context.update({
             'title': f'Album \"{self.album}\" - verifying frames',
-            'public_photos': self.album.photos_set.all().count(),
-            'current_photo_number': int(redis_instance.hget(f"album_{self.album.pk}", "number_of_processed_photos")) + 1,
-            'is_last_photo': self.object.slug == redis_instance.lindex(f"album_{self.album.pk}_photos", -1),
+            'heading': f"Verifying photo {self.object.title} ({current_photo_number}/{public_photos})",
+            'instructions': instructions,
             'photo_with_frames_url': os.path.join('/media/temp_photos',
                                                   f'album_{self.album.pk}/frames',
                                                   f"photo_{self.object.pk}.jpg"),
+            'button_label': button_label,
         })
 
         return context
@@ -284,30 +322,47 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, DetailView):
         self.object = self.get_object()
         if request.user.username_slug != self.object.owner.username_slug:
             raise Http404
-        return super().get(request, *args, **kwargs)
-
-    def get_context_data(self, *, object_list=None, **kwargs):
-        context = super().get_context_data(**kwargs)
 
         try:
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        status = redis_instance.hget(f"album_{self.object.pk}", "status")
-
         if current_stage != 3:
             raise Http404
 
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        status = redis_instance.hget(f"album_{self.object.pk}", "status")
         if status == "processing":
-            context.update({
-                'title': f'Album \"{self.object}\" - waiting',
-                'is_ready': False,
-            })
+            title = f'Album \"{self.object}\" - waiting'
+            is_ready = False
+            instructions = [
+                "Now verified faces are combined into patterns.",
+                "This should take no more than a moment.",
+                "Please refresh this page now.",
+            ]
+
         else:
-            context.update({
-                'title': f'Album \"{self.object}\" - ready to continue',
-                'is_ready': True,
-            })
+            title = f'Album \"{self.object}\" - ready to continue'
+            is_ready = True
+            instructions = [
+                "Patterns of faces has created, we are ready to continue.",
+                "You can press the button!",
+            ]
+
+        context.update({
+            'title': title,
+            'is_ready': is_ready,
+            'heading': "Recognizing faces. Creating patterns.",
+            'current_stage': 3,
+            'total_stages': 6,
+            'instructions': instructions,
+            'button_label': "Verify results",
+            'success_url': reverse_lazy('verify_patterns', kwargs={'album_slug': self.object.slug}),
+        })
 
         return context
 
@@ -389,6 +444,11 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         context.update({
             'title': f'Album \"{self.object}\" - verifying patterns',
             'formset': self.formset,
+            'heading': "Verifying patterns of people's faces.",
+            'current_stage': 4,
+            'total_stages': 6,
+            'instructions': ["Please mark odd faces, that do not fit the majority in each row."],
+            'button_label': "Confirm",
         })
 
         return context
@@ -534,6 +594,11 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
 
         context.update({
             'title': f'Album \"{self.object}\" - verifying patterns',
+            'heading': "Group patterns of people.",
+            'current_stage': 5,
+            'total_stages': 6,
+            'instructions': ["Please mark faces belonging to the one same person."],
+            'button_label': "Confirm",
         })
 
         return context

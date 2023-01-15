@@ -1,58 +1,51 @@
-{% extends 'mainapp/base/base.html' %}
+{% extends 'recognition/base/manual_handling_base.html' %}
 
-{% block content %}
-<div class="container-fluid flex-grow-1">
-    <div class="container-xxl mt-2 text-center">
-        <p class="h1">Stage 4/6</p>
-        <h2>Verifying patterns of people's faces.</h2>
-        <div class="row my-3">
-            <div class="col-12">
-                <p class="h5">Please mark odd faces, that do not fit the majority in each row.</p>
-            </div>
-        </div>
+{% block form_area %}
+<form action="" method="post" id="faces_of_pattern_form">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    {% for form in formset %}
+    {% if form.fields %}
+    <div class="card py-2 my-3{% if form.non_field_errors %} border-danger{% endif %}">
         <div class="row">
-            <div class="col-12 mt-3">
-                <form action="" method="post" id="faces_of_pattern_form">
-                    {% csrf_token %}
-                    {{ formset.management_form }}
-                    {{ formset.non_form_errors }}
-                    {% for form in formset %}
-                    {% if form.fields %}
-                    <div class="card py-2 my-3">
-                        <div class="row">
-                            {{ form.id }}
-                            {{ form.non_field_errors }}
-                            {% for field in form %}
-                            <div class="col-4 col-md-3 col-xxl-2">
-                                <div class="row align-items-center">
-                                    <div class="col-12">
-                                        <img src="{{ field.label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
-                                    </div>
-                                    <div class="col-12">
-                                        {{ field }}
-                                    </div>
-                                    {% if field.errors %}
-                                    <div class="invalid-feedback">
-                                        {% for err in field.errors %}
-                                        <p>{{ err }}</p>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
+            {{ form.id }}
+
+            {% if form.non_field_errors %}
+            <div class="text-danger text-center">
+                {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% for field in form %}
+            <div class="col-4 col-md-3 col-xxl-2">
+                <div class="row align-items-center">
+                    <div class="col-12">
+                        <img src="{{ field.label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                    </div>
+                    <div class="col-12">
+                        {{ field }}
+                    </div>
+                    {% if field.errors %}
+                    <div class="invalid-feedback">
+                        {% for err in field.errors %}
+                        <p>{{ err }}</p>
+                        {% endfor %}
                     </div>
                     {% endif %}
-                    {% endfor %}
-                </form>
+                </div>
             </div>
-        </div>
-        <div class="row mt-5">
-            <div class="col-12">
-                <button class="btn btn-primary btn-lg w-50" type="submit" form="faces_of_pattern_form">Confirm</button>
-            </div>
+            {% endfor %}
         </div>
     </div>
-</div>
+    {% endif %}
+    {% endfor %}
+
+    {% block submit_button %}
+    {{ block.super }}
+    {% endblock %}
+
+</form>
 {% endblock %}

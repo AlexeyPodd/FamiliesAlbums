@@ -1,8 +1,4 @@
-import os.path
-
 from django import forms
-
-from photoalbums.settings import MEDIA_ROOT
 
 
 class VerifyFramesForm(forms.Form):

@@ -1,45 +1,27 @@
-{% extends 'mainapp/base/base.html' %}
+{% extends 'recognition/base/manual_handling_base.html' %}
 
-{% block content %}
-<div class="container-fluid flex-grow-1">
-    <div class="container-xxl mt-2 text-center">
-        <p class="h1">Stage 2/6</p>
-        <h2>Verifying photo {{ photo.title }} ({{ current_photo_number }}/{{ public_photos }})</h2>
-        <div class="row my-3">
-            <div class="col-12">
-                <p class="h5">Please mark the faces of children under 10 and objects that are not faces.</p>
-                <p class="h5">They will be removed.</p>
-            </div>
+{% block form_area %}
+<div class="row">
+    <div class="col-12 col-md-9">
+        <img src="{{ photo_with_frames_url }}" alt="" style="width: 100%; height: auto; max-height: 750px; object-fit: contain;">
+    </div>
+    <div class="col-12 col-md-3 mt-3">
+        {{ block.super }}
+    </div>
+</div>
+{% endblock %}
+
+{% block fields %}
+{% for field in form %}
+<div class="col-3 col-md-6 col-xxl-4">
+    <div class="row align-items-center">
+        <div class="col-8">
+            <label for="{{ field.id_for_label }}">{{field.label}}:</label>
         </div>
-        <div class="row">
-            <div class="col-12 col-md-9">
-                <img src="{{ photo_with_frames_url }}" alt="" style="width: 100%; height: auto; max-height: 750px; object-fit: contain;">
-            </div>
-            <div class="col-12 col-md-3 mt-3">
-                <form action="" method="post" id="wrong_frames_form">
-                {% csrf_token %}
-                    <div class="row">
-                    {% for field in form %}
-                        <div class="col-3 col-md-6 col-xxl-4">
-                            <div class="row align-items-center">
-                                <div class="col-8">
-                                    <label for="{{ field.id_for_label }}">{{field.label}}:</label>
-                                </div>
-                                <div class="col-4">
-                                    {{ field }}
-                                </div>
-                            </div>
-                        </div>
-                    {% endfor %}
-                    </div>
-                </form>
-            </div>
-        </div>
-        <div class="row mt-5 mb-2">
-            <div class="col-12">
-                <button class="btn btn-primary btn-lg w-50" type="submit" form="wrong_frames_form">Next {% if is_last_photo %}stage{% else %}photo{% endif %}</button>
-            </div>
+        <div class="col-4">
+            {{ field }}
         </div>
     </div>
 </div>
+{% endfor %}
 {% endblock %}

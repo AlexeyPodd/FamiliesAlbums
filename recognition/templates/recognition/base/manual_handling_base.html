@@ -1,0 +1,60 @@
+{% extends 'mainapp/base/base.html' %}
+
+{% block content %}
+<div class="container-xxl mt-2 text-center">
+
+    {% block heading %}
+    <div class="row my-3">
+        <div class="col-12">
+            <h2>{{ heading }}</h2>
+            <p class="h3">Stage {{ current_stage }}/{{ total_stages }}</p>
+            {% for instruction in instructions %}
+            <p class="h5">{{ instruction }}</p>
+            {% endfor %}
+        </div>
+    </div>
+    {% endblock %}
+
+    {% block form_area %}
+    <form action="" method="post">
+        {% csrf_token %}
+        <div class="row">
+
+            <!--Errors-->
+            {% block non_field_errors %}
+            <div class="text-danger text-center">
+                {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+            {% endblock %}
+
+            {% block fields %}
+            {% for field in form %}
+            <div class="col-4 col-md-3 col-xxl-2">
+                <div class="row align-items-center">
+                    <div class="col-12">
+                        <img src="{{ field.label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                    </div>
+                    <div class="col-12">
+                        {{ field }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endblock %}
+        </div>
+
+        {% block submit_button %}
+        <div class="row mt-5">
+            <div class="col-12">
+                <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>
+            </div>
+        </div>
+        {% endblock %}
+
+    </form>
+    {% endblock %}
+
+</div>
+{% endblock %}
