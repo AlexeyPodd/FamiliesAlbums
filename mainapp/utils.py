@@ -6,13 +6,14 @@ from math import ceil
 from wsgiref.util import FileWrapper
 
 from django.core.paginator import Paginator
+from django.db import models
 
 from photoalbums.settings import BASE_DIR
 
 
 def get_photo_save_path(instance, filename):
     date = datetime.now().strftime("%Y/%m/%d")
-    return f'photos/{date}/{instance.album.slug}/{filename}'
+    return f'photos/{date}/{instance.album.slug}/{instance.slug}.{filename.split(".")[-1]}'
 
 
 def get_zip(album, private_access=False):
@@ -64,3 +65,12 @@ class FavoritesPaginator(Paginator):
         count = max(self.count - self.per_page + self.deltafirst, 0)
         hits = max(0, count - self.orphans)
         return 1 + ceil(hits / self.per_page)
+        
+
+class TruncatingCharField(models.CharField):
+    def get_prep_value(self, value):
+        value = super().get_prep_value(value)
+        if value:
+            return value[:self.max_length]
+        return value
+

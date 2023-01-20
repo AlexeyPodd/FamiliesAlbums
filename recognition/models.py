@@ -10,15 +10,19 @@ class Faces(models.Model):
       and encoding of the face for recognition."""
 
     photo = models.ForeignKey(Photos, on_delete=models.CASCADE, verbose_name='Photo')
+    index = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Index on photo')
     pattern = models.ForeignKey('Patterns', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Pattern')
-    loc_top = models.PositiveSmallIntegerField(verbose_name='Location Top')
-    loc_right = models.PositiveSmallIntegerField(verbose_name='Location Right')
-    loc_bot = models.PositiveSmallIntegerField(verbose_name='Location Bottom')
-    loc_left = models.PositiveSmallIntegerField(verbose_name='Location Left')
-    encoding = models.BinaryField(verbose_name='Encoding')
+    loc_top = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Top')
+    loc_right = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Right')
+    loc_bot = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Bottom')
+    loc_left = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Left')
+    encoding = models.BinaryField(null=True, blank=True, verbose_name='Encoding')
 
     def __str__(self):
         return f"{self.photo}__(top={self.loc_top};left={self.loc_left})"
+
+    class Meta:
+        ordering = ['photo', 'index']
 
 
 class Patterns(models.Model):

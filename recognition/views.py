@@ -14,7 +14,7 @@ from django.views.generic.edit import FormMixin
 
 from mainapp.models import *
 from .forms import VerifyFramesForm, BaseVerifyPatternForm, BaseVerifyPatternFormset, GroupPatternsForm
-from .tasks import face_searching_task, relate_faces_task
+from .tasks import face_searching_task, relate_faces_task, compare_new_and_existing_people_task
 from photoalbums.settings import REDIS_HOST, REDIS_PORT, REDIS_DATA_EXPIRATION_SECONDS, MEDIA_ROOT
 
 redis_instance = redis.Redis(host=REDIS_HOST,
@@ -619,6 +619,8 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
     def form_valid(self, form):
         self._group_patterns_into_people(form)
         self._set_correct_status(form)
+        if not self._get_single_patterns():
+            compare_new_and_existing_people_task.delay(self.object.pk)
         return super().form_valid(form)
 
     def _group_patterns_into_people(self, form):

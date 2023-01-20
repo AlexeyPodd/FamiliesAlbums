@@ -1,5 +1,6 @@
 import os
 
+from django.db.models import Q
 from django.db.models.signals import pre_delete
 from django.dispatch import receiver
 
@@ -9,7 +10,9 @@ from .models import Photos
 
 @receiver(pre_delete, sender=Photos)
 def photos_delete(sender, instance, **kwargs):
-    if instance.original is not None and not Photos.objects.filter(original=instance.original).exists():
+    if instance.original is not None and\
+            not Photos.objects.filter(Q(original=instance.original) & ~ Q(pk=instance.pk)).exists():
+
         directory = os.path.dirname(os.path.abspath(os.path.join(BASE_DIR, instance.original.url[1:])))
         instance.original.delete()
 

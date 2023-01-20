@@ -1,14 +1,18 @@
 import os
+import re
+
 import redis
 import face_recognition as fr
 import pickle
 from PIL import Image, ImageDraw, ImageFont
 
-from mainapp.models import Photos
-
+from mainapp.models import Photos, Albums
 from photoalbums.settings import REDIS_HOST, REDIS_PORT, BASE_DIR, REDIS_DATA_EXPIRATION_SECONDS, \
     FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE, MEDIA_ROOT
-from recognition.data_classes import *
+
+from .data_classes import *
+from .models import People, Patterns, Faces
+
 
 redis_instance = redis.Redis(host=REDIS_HOST,
                              port=REDIS_PORT,
@@ -158,3 +162,84 @@ class RelateFacesHandler:
         redis_instance.hset(f"album_{self._album_pk}", "current_stage", 3)
         redis_instance.hset(f"album_{self._album_pk}", "status", "completed")
         redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+
+class ComparingExistingAndNewPeopleHandler:
+    """Class for handling uniting people of processing album with previously created people of this user."""
+
+    def __init__(self, album_pk):
+        self._album_pk = album_pk
+        self._album = None
+        self._existing_people = []
+        self._people = []
+        self._pairs = []
+
+    def handle(self):
+        self._get_existing_people_data_from_db()
+        self._get_new_people_data_from_redis()
+        if self._existing_people:
+            self._unite_people()
+        self._save_united_people_data_to_redis()
+
+    def _get_existing_people_data_from_db(self):
+        queryset = Faces.objects.filter(
+            pattern__person__owner__username=self._album.owner.username
+        ).select_related(
+            'pattern__person', 'photo', 'pattern__central_face'
+        ).exclude(
+            photo__album__pk=self._album_pk
+        ).order_by('pattern__person', 'pattern')
+
+        # Extracting data from db_instances
+        person_db_instance = pattern_db_instance = None
+        person = pattern = None
+        for face_db_instance in queryset:
+            face = FaceData(photo_pk=face_db_instance.photo.pk,
+                            index=face_db_instance.index,
+                            location=(face_db_instance.loc_top, face_db_instance.loc_right,
+                                      face_db_instance.loc_bot, face_db_instance.loc_left),
+                            encoding=pickle.loads(face_db_instance.encoding))
+
+            if person_db_instance != face_db_instance.pattern.person:
+                person_db_instance = face_db_instance.pattern.person
+                person = PersonData()
+                self._existing_people.append(person)
+
+            if pattern_db_instance != face_db_instance.pattern:
+                pattern_db_instance = face_db_instance.pattern
+                pattern = PatternData(face)
+                person.add_pattern(pattern)
+            else:
+                pattern.add_face(face)
+
+            if face_db_instance.pk == face_db_instance.pattern.central_face.pk:
+                pattern.center = face
+
+    def _get_new_people_data_from_redis(self):
+        i = 1
+        while redis_instance.exists(f"album_{self._album_pk}_person_{i}"):
+            person = PersonData()
+
+            j = 1
+            while redis_instance.hexists(f"album_{self._album_pk}_person_{i}", f"pattern_{j}"):
+                pattern_ind = int(redis_instance.hget(f"album_{self._album_pk}_person_{i}", f"pattern_{j}"))
+
+                for k in range(1, int(redis_instance.hget(f"album_{self._album_pk}_pattern_{pattern_ind}",
+                                                          "faces_amount")) + 1):
+                    face_address = redis_instance.hget(f"album_{self._album_pk}_pattern_{pattern_ind}", f"face{k}")
+                    photo_pk, face_ind = re.search(r'photo_(\d+)_face_(\d+)', face_address).groups()
+                    face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_location"))
+                    face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_encoding"))
+                    face = FaceData(photo_pk=int(photo_pk),
+                                    index=int(face_ind),
+                                    location=face_loc,
+                                    encoding=face_enc)
+                    if k == 1:
+                        pattern = PatternData(face)
+                    else:
+                        pattern.add_face(face)
+
+                pattern.find_central_face()
+                person.add_pattern(pattern)
+
+            self._people.append(person)

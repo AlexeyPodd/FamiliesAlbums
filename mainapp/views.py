@@ -28,20 +28,6 @@ class AboutPageView(TemplateView):
     extra_context = {'title': 'About this site', 'current_section': 'about'}
 
 
-class SearchPageView(ListView):
-    model = Albums
-    template_name = 'mainapp/search.html'
-    context_object_name = 'searching_list'
-
-    def get_context_data(self, *, object_list=None, **kwargs):
-        context = super().get_context_data(**kwargs)
-        search_request = self.request.GET.get('q') if self.request.GET.get('q') is not None else ''
-        context.update({'title': 'Searching results',
-                        'current_section': 'search',
-                        'searching_request': search_request})
-        return context
-
-
 def pageNotFound(request, exception):
     return HttpResponseNotFound('<h1>Page not found</h1>')
 
@@ -286,6 +272,10 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
             self._set_random_album_cover()
 
         self.photos_formset.save()
+
+        # deleting marked objects
+        for delete_value in self.photos_formset.deleted_objects:
+            delete_value.delete()
 
         # set default miniature if old become private
         self.object = self.get_object()
