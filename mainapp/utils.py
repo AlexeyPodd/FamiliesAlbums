@@ -74,3 +74,11 @@ class TruncatingCharField(models.CharField):
             return value[:self.max_length]
         return value
 
+
+class AboutPageInfo:
+    def __init__(self, section_id, text_first, img_url, title, paragraphs):
+        self.section_id = section_id
+        self.text_first = text_first
+        self.img_url = img_url
+        self.paragraphs = paragraphs
+        self.title = title

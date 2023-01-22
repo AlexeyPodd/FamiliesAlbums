@@ -6,6 +6,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseNotFound, Http404, HttpResponseRedirect, FileResponse, HttpResponse
 from django.shortcuts import redirect
+from django.templatetags.static import static
 from django.urls import reverse_lazy
 from django.views.generic import ListView, TemplateView, CreateView, UpdateView
 from django.views.generic.detail import SingleObjectMixin, DetailView
@@ -13,19 +14,59 @@ from django.db.models import Count
 
 from accounts.models import User
 from .forms import *
-from .utils import get_zip, delete_from_favorites, FavoritesPaginator
+from .utils import get_zip, delete_from_favorites, FavoritesPaginator, AboutPageInfo
 
 
 class MainPageView(ListView):
     model = Albums
     template_name = 'mainapp/index.html'
-    context_object_name = 'last_uploaded'
+    context_object_name = 'albums'
     extra_context = {'title': 'Main Page'}
+
+    def get_queryset(self):
+        return self.model.objects.filter(
+            is_private=False,
+            photos__isnull=False,
+        ).select_related(
+            'owner',
+        ).annotate(
+            Count('photos'),
+        ).order_by(
+            '-time_update',
+        )[:16]
 
 
 class AboutPageView(TemplateView):
     template_name = 'mainapp/about.html'
     extra_context = {'title': 'About this site', 'current_section': 'about'}
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        general_info = AboutPageInfo(section_id="general",
+                                     text_first=False,
+                                     img_url=static('images/about.jpg'),
+                                     title="About",
+                                     paragraphs=["firsdt", "second"])
+        uploads_info = AboutPageInfo(section_id="uploads",
+                                     text_first=True,
+                                     img_url=static('images/uploads.jpg'),
+                                     title="Uploading photos",
+                                     paragraphs=["first",  "second", "last"])
+        recognition_info = AboutPageInfo(section_id="recognition",
+                                         text_first=False,
+                                         img_url=static('images/recognition.jpg'),
+                                         title="Recognition",
+                                         paragraphs=["first",  "second", "third", "last"])
+        sections_info = [general_info, uploads_info, recognition_info]
+
+        context.update({
+            'title': 'About this site',
+            'current_section': 'about',
+            'sections_info': sections_info,
+        })
+
+        return context
 
 
 def pageNotFound(request, exception):

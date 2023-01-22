@@ -1,5 +1,62 @@
 {% extends 'mainapp/base/base.html' %}
+{% load static %}
 
 {% block content %}
-<h1>{{ title }}</h1>
+<div class="container-xxl p-0">
+    <img class="img-fluid" src="{% static 'images/main.jpg' %}" alt="">
+</div>
+
+{% if not request.user.is_authenticated %}
+<section id="greetings_new">
+    <div class="container-xxl text-center pt-4 mb-4 bg-secondary">
+        <p class="h1">Welcome!</p>
+        <p class="h4">Register and get the opportunity to store your photos in albums on this site.</p>
+        <p class="h4">Also you can search for people who are present in your photos, in the photos of other users who allowed it.</p>
+        <div class="row d-flex justify-content-evenly py-5">
+            <a href="{% url 'django_registration_register' %}" class="btn btn-primary w-25">Register</a>
+            <a href="{% url 'login' %}" class="btn btn-primary w-25">Login</a>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+{% if albums %}
+<section id="recent_updates">
+<div class="container-xxl text-center my-2">
+    <h5 class="h2">Recently updated albums</h5>
+    <div class="row">
+        {% for album in albums %}
+        <div class="col-6 col-md-4 col-xl-3 p-4 d-flex align-items-stretch">
+            <div class="card p-3 w-100" style="border: 8px solid rgba(0, 0, 0, 0.35); border-radius: 4%">
+                <div class="col-12 d-flex justify-content-center">
+                    <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 400px; object-fit: contain;">
+                </div>
+                <div class="col-12 mt-auto">
+                    <div class="text-center">
+                        <h5 class="card-title">{{ album.title }}</h5>
+                        <p class="card-text">{{ album.photos__count }} photo{% if album.photos__count > 1 %}s{% endif %}</p>
+                        {% if album.location %}
+                        <p class="card-text">{{ album.location }}
+                        {% endif %}
+                        {% if album.date_start or album.date_end %}
+                        {% if album.location %}<br>{% else %}</p><p class="card-text">{% endif %}
+                        {{ album.date_start|default_if_none:'' }} - {{ album.date_end|default_if_none:'' }}</p>
+                        {% else %}
+                        </p>
+                        {% endif %}
+                        <a href="{{ album.get_absolute_url }}" class="btn btn-primary">View Album</a>
+                        <p>
+                            <a href="{% url 'user_profile' username_slug=album.owner.username_slug %}">
+                                <small>{{ album.owner.username }}</small>
+                            </a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+</section>
+{% endif %}
 {% endblock %}
