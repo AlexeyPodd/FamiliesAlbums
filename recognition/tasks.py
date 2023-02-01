@@ -1,7 +1,7 @@
 from celery.utils.log import get_task_logger
 from celery import shared_task
 
-from .photos_handlers import FaceSearchingHandler, RelateFacesHandler, ComparingExistingAndNewPeopleHandler
+from .photos_handlers import *
 
 logger = get_task_logger(__name__)
 
@@ -28,3 +28,11 @@ def compare_new_and_existing_people_task(album_pk):
     handler = ComparingExistingAndNewPeopleHandler(album_pk)
     handler.handle()
     return f"Comparing people of {album_pk} album with previously created people has been finished."
+
+
+@shared_task
+def save_album_recognition_data_to_db_task(album_pk):
+    logger.info(f"Starting to save album {album_pk} recognition data to Data Base.")
+    handler = SavingAlbumRecognitionDataToDBHandler(album_pk)
+    handler.handle()
+    return f"Recognition data of {album_pk} album successfully saved to Data Base."

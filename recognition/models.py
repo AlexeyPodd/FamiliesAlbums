@@ -52,5 +52,7 @@ class Clusters(models.Model):
      Fractal structure is used."""
 
     parent = models.ForeignKey('self', blank=True, null=True, on_delete=models.PROTECT, verbose_name='Parent')
-    center = models.OneToOneField('Patterns', blank=True, null=True, on_delete=models.SET_NULL,
-                                  verbose_name='Central Pattern')
+    center = models.ForeignKey('Patterns', blank=True, null=True, on_delete=models.SET_NULL,
+                               verbose_name='Central Pattern')
+    not_recalc_patt_del = models.PositiveSmallIntegerField(default=0,
+                                                           verbose_name='Not recalculated patterns deletions')

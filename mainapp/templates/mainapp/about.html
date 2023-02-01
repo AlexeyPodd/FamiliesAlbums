@@ -3,15 +3,17 @@
 {% block content %}
 {% for info in sections_info %}
 <section id="{{ info.section_id }}">
-    <div class="container-xxl text-center pt-4 mb-4">
+    <div class="container-xxl text-center pt-4 mb-5">
         <div class="row">
-            <div class="col-12 col-lg-6">
+            <div class="col-12 col-lg-5">
                 <img src="{{ info.img_url }}" alt="" class="img-fluid">
             </div>
-            <div class="col-12 col-lg-6{% if info.text_first %} order-first{% endif %}">
-                <h1>{{ info.title }}</h1>
+            <div class="col-12 col-lg-7{% if info.text_first %} order-first{% endif %}">
+                <h2 class="fw-bold">{{ info.title }}</h2>
                 {% for paragraph in info.paragraphs %}
-                <p class="h3">{{ paragraph }}</p>
+                <div class="text-start">
+                    <p class="h5 my-4">{{ paragraph }}</p>
+                </div>
                 {% endfor %}
             </div>
         </div>

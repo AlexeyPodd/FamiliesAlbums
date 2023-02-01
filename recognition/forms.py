@@ -1,5 +1,7 @@
 from django import forms
 
+from recognition.utils import VerifyMatchField
+
 
 class VerifyFramesForm(forms.Form):
     def __init__(self, *args, faces_amount=0, **kwargs):
@@ -43,7 +45,7 @@ class BaseVerifyPatternFormset(forms.BaseFormSet):
 
 
 class GroupPatternsForm(forms.Form):
-    def __init__(self, *args, album_pk, single_patterns: tuple[int, ...], **kwargs):
+    def __init__(self, album_pk, single_patterns: tuple[int, ...], *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         for x in single_patterns:
@@ -51,5 +53,20 @@ class GroupPatternsForm(forms.Form):
                 widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
                                                   'style': 'width: 25px; height: 25px;'}),
                 label=f"/media/temp_photos/album_{album_pk}/patterns/{x}/1.jpg",
+                required=False,
+            )
+
+
+class VarifyMatchesForm(forms.Form):
+    def __init__(self, match_imgs_urls, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        for i, (new_per_url, old_per_url) in enumerate(match_imgs_urls, 1):
+            self.fields[f'match_{i}'] = VerifyMatchField(
+                new_per_img=new_per_url,
+                old_per_img=old_per_url,
+                widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
+                                                  'style': 'width: 25px; height: 25px;'}),
+                label=f'match {i}',
                 required=False,
             )

@@ -1,0 +1,21 @@
+{% extends 'recognition/base/manual_handling_base.html' %}
+
+{% block fields %}
+{% for field in form %}
+<div class="col-12 col-md-6">
+    <div class="card">
+        <div class="row align-items-center">
+            <div class="col-4">
+                <img src="{{ field.new_per_img }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+            </div>
+            <div class="col-4">
+                <img src="{{ field.old_per_img }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+            </div>
+            <div class="col-4">
+                {{ field }}
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

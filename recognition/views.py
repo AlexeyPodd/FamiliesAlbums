@@ -13,8 +13,9 @@ from django.db.models import Count, Q
 from django.views.generic.edit import FormMixin
 
 from mainapp.models import *
-from .forms import VerifyFramesForm, BaseVerifyPatternForm, BaseVerifyPatternFormset, GroupPatternsForm
-from .tasks import face_searching_task, relate_faces_task, compare_new_and_existing_people_task
+from .forms import *
+from .models import Faces
+from .tasks import *
 from photoalbums.settings import REDIS_HOST, REDIS_PORT, REDIS_DATA_EXPIRATION_SECONDS, MEDIA_ROOT
 
 redis_instance = redis.Redis(host=REDIS_HOST,
@@ -316,7 +317,7 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, DetailView):
     model = Albums
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
-    template_name = 'recognition/patterns_waiting.html'
+    template_name = 'recognition/base/waiting_base.html'
 
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
@@ -330,13 +331,14 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, DetailView):
         if current_stage != 3:
             raise Http404
 
+        self.status = redis_instance.hget(f"album_{self.object.pk}", "status")
+
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        status = redis_instance.hget(f"album_{self.object.pk}", "status")
-        if status == "processing":
+        if self.status == "processing":
             title = f'Album \"{self.object}\" - waiting'
             is_ready = False
             instructions = [
@@ -620,7 +622,13 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         self._group_patterns_into_people(form)
         self._set_correct_status(form)
         if not self._get_single_patterns():
-            compare_new_and_existing_people_task.delay(self.object.pk)
+            self._another_album_processed = Faces.objects.filter(
+                photo__album__owner__username=self.object.owner.username_slug,
+            ).exclude(photo__album__pk=self.object.pk).exists()
+            if self._another_album_processed:
+                compare_new_and_existing_people_task.delay(self.object.pk)
+            else:
+                save_album_recognition_data_to_db_task.delay(self.object.pk)
         return super().form_valid(form)
 
     def _group_patterns_into_people(self, form):
@@ -664,4 +672,154 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         if self._get_single_patterns():
             return reverse_lazy('group_patterns', kwargs={'album_slug': self.object.slug})
         else:
-            return reverse_lazy('recognition_main')
+            if self._another_album_processed:
+                return reverse_lazy('people_waiting', kwargs={'album_slug': self.object.slug})
+            else:
+                return reverse_lazy('save_waiting', kwargs={'album_slug': self.object.slug})
+
+
+class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, DetailView):
+    model = Albums
+    context_object_name = 'album'
+    slug_url_kwarg = 'album_slug'
+    template_name = 'recognition/base/waiting_base.html'
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if current_stage != 5:
+            raise Http404
+
+        self.status = redis_instance.hget(f"album_{self.object.pk}", "status")
+
+        return super().get(request, *args, **kwargs)
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        if self.status == "processing":
+            title = f'Album \"{self.object}\" - waiting'
+            is_ready = False
+            instructions = [
+                "Now the people found in the photos of this album are searched in your other processed albums.",
+                "This should take no more than a moment.",
+                "Please refresh the page.",
+            ]
+            button_label = 'waiting'
+            success_url = None
+
+        else:
+            title = f'Album \"{self.object}\" - ready to continue'
+            is_ready = True
+            if self._are_any_matches():
+                instructions = [
+                    "Some matches are found.",
+                    "Please check them.",
+                ]
+                button_label = 'Check matches'
+                success_url = reverse_lazy('verify_matches', kwargs={'album_slug': self.object.slug})
+            else:
+                instructions = [
+                    "We didn't found any matches.",
+                    "Please continue.",
+                ]
+                button_label = 'Continue'
+                success_url = reverse_lazy('manual_matching', kwargs={'album_slug': self.object.slug})
+
+        context.update({
+            'title': title,
+            'is_ready': is_ready,
+            'heading': "Looking for people matches in your other processed albums",
+            'current_stage': 5,
+            'total_stages': 6,
+            'instructions': instructions,
+            'button_label': button_label,
+            'success_url': success_url,
+        })
+
+        return context
+
+    def _are_any_matches(self):
+        i = 1
+        while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+            if redis_instance.hget(f"album_{self.object.pk}_person_{i}", "tech_pair"):
+                return True
+        else:
+            return False
+
+
+class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
+    template_name = 'recognition/verify_matches.html'
+    model = Albums
+    slug_url_kwarg = 'album_slug'
+    form_class = VarifyMatchesForm
+    context_object_name = 'album'
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if not (current_stage == 5 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == 6 and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+            raise Http404
+
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if not (current_stage == 5 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == 6 and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+            raise Http404
+
+        form = self.get_form()
+        if form.is_valid():
+            return self.form_valid(form)
+        else:
+            return self.form_invalid(form)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs.update({
+            'match_imgs_urls': self._mathes_img_urls(),
+        })
+        return kwargs
+
+    # def _set_matches_img_urls(self):
+    #     # Getting index of new person and pk of old person in matches
+    #     old_people_pks = []
+    #     new_people_inds = []
+    #     i = 1
+    #     while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+    #         if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "tech_pair"):
+    #             pk = int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "tech_pair")[7:])
+    #             old_people_pks.append(pk)
+    #             new_people_inds.append(i)
+    #         i += 1
+
+
+class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
+    pass
+
+
+class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, DetailView):
+    pass

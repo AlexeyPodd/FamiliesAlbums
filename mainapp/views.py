@@ -38,7 +38,6 @@ class MainPageView(ListView):
 
 class AboutPageView(TemplateView):
     template_name = 'mainapp/about.html'
-    extra_context = {'title': 'About this site', 'current_section': 'about'}
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -46,24 +45,47 @@ class AboutPageView(TemplateView):
         general_info = AboutPageInfo(section_id="general",
                                      text_first=False,
                                      img_url=static('images/about.jpg'),
-                                     title="About",
-                                     paragraphs=["firsdt", "second"])
+                                     title="About this site",
+                                     paragraphs=[
+                                         "This site was created to preserve the moments that are important to us, "
+                                         "and the memory of the people with whom we spent them.",
+                                         "And to search for the lost. Perhaps some of your photos show a person whose"
+                                         " photos were lost by their loved ones. If you let them, they can copy these"
+                                         " photos!",
+                                     ])
         uploads_info = AboutPageInfo(section_id="uploads",
                                      text_first=True,
                                      img_url=static('images/uploads.jpg'),
                                      title="Uploading photos",
-                                     paragraphs=["first",  "second", "last"])
+                                     paragraphs=[
+                                         "We recommend storing your valuable photos in several places to prevent loss "
+                                         "due to accidents. This site could be one of those places.",
+                                         "Today we can't store ultra-high resolution photos, so if the photo size"
+                                         " exceeds 1280 pixels, it will be compressed to that size.",
+                                         "We would like to have a friendly community on the site and expect all"
+                                         " publicly available content uploaded by our users to be family friendly."
+                                         " Please stick to this rule.",
+                                     ])
         recognition_info = AboutPageInfo(section_id="recognition",
                                          text_first=False,
                                          img_url=static('images/recognition.jpg'),
                                          title="Recognition",
-                                         paragraphs=["first",  "second", "third", "last"])
-        sections_info = [general_info, uploads_info, recognition_info]
+                                         paragraphs=[
+                                             "If you want to find photos with your relative that you don't have...",
+                                             "Or just let other users search your photos based on the people in them...",
+                                             "You should process your album to identify the people in it. This process "
+                                             "is mostly automatic, requiring only a very simple confirmation of the "
+                                             "result from you, which even a child can handle.",
+                                             "We hope that this application will allow you to bring back precious"
+                                             " memories for you. If you don't succeed right away, don't despair! "
+                                             "Perhaps some new user will one day find their loved ones in your photo. "
+                                             "And maybe he will also have photos of yours that you don't have!",
+                                         ])
 
         context.update({
             'title': 'About this site',
             'current_section': 'about',
-            'sections_info': sections_info,
+            'sections_info': (general_info, uploads_info, recognition_info),
         })
 
         return context

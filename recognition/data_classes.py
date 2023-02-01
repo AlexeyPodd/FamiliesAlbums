@@ -28,7 +28,7 @@ class FaceData:
 class PatternData:
     def __init__(self, face):
         self._faces = [face]
-        self._center = face
+        self._central_face = face
 
     def add_face(self, face):
         if type(face) is not FaceData:
@@ -47,17 +47,23 @@ class PatternData:
                 min_dist_sum = dist_sum
                 central_face = face
 
-        self._center = central_face
+        self._central_face = central_face
 
     @property
-    def center(self):
-        return self._center
+    def central_face(self):
+        return self._central_face
 
-    @center.setter
-    def center(self, value):
+    @central_face.setter
+    def central_face(self, value):
+        if value not in self._faces:
+            raise ValueError("Central face must be one of its faces.")
+        self._central_face = value
+
+    @central_face.setter
+    def central_face(self, value):
         if type(value) != FaceData or value not in self._faces:
             raise ValueError("Center parameter must be face of this pattern.")
-        self._center = value
+        self._central_face = value
 
     def __iter__(self):
         return iter(self._faces)
@@ -67,8 +73,11 @@ class PatternData:
 
 
 class PersonData:
-    def __init__(self):
+    def __init__(self, redis_indx=None, pk=None, pair_pk=None):
         self._patterns = []
+        self._redis_indx = redis_indx
+        self._pk = pk
+        self._pair_pk = pair_pk
 
     def add_pattern(self, pattern):
         if type(pattern) is not PatternData:
@@ -77,3 +86,18 @@ class PersonData:
 
     def __iter__(self):
         return iter(self._patterns)
+
+    def __getitem__(self, item):
+        return self._patterns[item]
+
+    @property
+    def redis_indx(self):
+        return self._redis_indx
+
+    @property
+    def pk(self):
+        return self._pk
+
+    @property
+    def pair_pk(self):
+        return self._pair_pk
