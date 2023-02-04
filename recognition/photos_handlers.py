@@ -4,6 +4,7 @@ import re
 import redis
 import pickle
 from PIL import Image, ImageDraw, ImageFont
+from django.db.models import Prefetch
 
 from mainapp.models import Photos, Albums
 from photoalbums.settings import REDIS_HOST, REDIS_PORT, BASE_DIR, REDIS_DATA_EXPIRATION_SECONDS, \
@@ -11,7 +12,7 @@ from photoalbums.settings import REDIS_HOST, REDIS_PORT, BASE_DIR, REDIS_DATA_EX
     UNREGISTERED_PATTERNS_CLUSTER_RELEVANT_LIMIT, MINIMAL_CLUSTER_TO_RECALCULATE
 
 from .data_classes import *
-from .models import *
+from .models import Faces, Patterns, People, Clusters
 
 
 redis_instance = redis.Redis(host=REDIS_HOST,
@@ -32,19 +33,52 @@ class FaceSearchingHandler:
         self._path = self._prepare_path()
 
     def handle(self):
-        for photo in Photos.objects.filter(album__pk=self._album_pk, is_private=False):
-            image = fr.load_image_file(os.path.join(BASE_DIR, photo.original.url[1:]))
-            faces = self._find_faces_on_image(image=image)
-            self._print_photo_with_framed_faces(image=image, faces=faces, pk=photo.pk)
-            self._save_photo_data(data=faces, pk=photo.pk)
-
+        self._clear_redis_album_data()
+        self._clear_temp_files()
+        self._clear_db_album_data()
+        self._face_search_and_print()
         self._save_album_report()
+
+    def _clear_redis_album_data(self):
+        redis_instance.delete(f"album_{self._album_pk}",
+                              f"album_{self._album_pk}_photos")
+        redis_instance.delete(*[f"photo_{photo.pk}" for photo in Photos.objects.filter(album__pk=self._album_pk)])
+
+        str_patterns = (f"album_{self._album_pk}_pattern_", f"album_{self._album_pk}_person_")
+        for str_pattern in str_patterns:
+            i = 1
+            while redis_instance.exists(str_pattern + str(i)):
+                redis_instance.delete(str_pattern + str(i))
+                i += 1
+
+    def _clear_temp_files(self):
+        path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}')
+        if os.path.exists(path):
+            os.system(f'rm -rf {path}')
+
+    def _clear_db_album_data(self):
+        album_faces = Faces.objects.filter(photo__album__pk=self._album_pk).select_related('pattern__person')
+        related_patterns_pks = set(map(lambda f: f.pattern.pk, album_faces))
+        related_people_pks = set(map(lambda f: f.pattern.person.pk, album_faces))
+
+        album_faces.delete()
+        Patterns.objects.filter(pk__in=related_patterns_pks,
+                                faces__isnull=True).delete()
+        People.objects.filter(pk__in=related_people_pks,
+                              patterns__isnull=True).delete()
 
     def _prepare_path(self):
         path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/frames')
         if not os.path.exists(path):
             os.makedirs(path)
         return path
+
+    def _face_search_and_print(self):
+        for photo in Photos.objects.filter(album__pk=self._album_pk, is_private=False):
+            image = fr.load_image_file(os.path.join(BASE_DIR, photo.original.url[1:]))
+            faces = self._find_faces_on_image(image=image)
+            self._print_photo_with_framed_faces(image=image, faces=faces, pk=photo.pk)
+            self._save_photo_data(data=faces, pk=photo.pk)
 
     @staticmethod
     def _find_faces_on_image(image):
@@ -313,31 +347,19 @@ class SavingAlbumRecognitionDataToDBHandler:
     def __init__(self, album_pk):
         self._album_pk = album_pk
         self._people = []
-        self._patterns_queryset = None
+        self._new_patterns_queryset = None
 
     def handle(self):
-        self._clear_db_album_data()
         self._get_data_from_redis()
         self._save_data_to_db()
         self._clear_redis_album_data()
         self._clear_temp_files()
 
-    def _clear_db_album_data(self):
-        album_faces = Faces.objects.filter(photo__album__pk=self._album_pk).select_related('pattern__person')
-        related_patterns_pks = set(map(lambda f: f.pattern.pk, album_faces))
-        related_people_pks = set(map(lambda f: f.pattern.person.pk, album_faces))
-
-        album_faces.delete()
-        Patterns.objects.filter(pk__in=related_patterns_pks,
-                                faces__isnull=True).delete()
-        People.objects.filter(pk__in=related_people_pks,
-                              patterns__isnull=True).delete()
-
     def _get_data_from_redis(self):
         i = 1
         while redis_instance.exists(f"album_{self._album_pk}_person_{i}"):
             person = PersonData(redis_indx=i,
-                                pair_pk=redis_instance.hget(f"album_{self._album_pk}_person_{i}", "real_pair"))
+                                pair_pk=int(redis_instance.hget(f"album_{self._album_pk}_person_{i}", "real_pair")[7:]))
 
             j = 1
             while redis_instance.hexists(f"album_{self._album_pk}_person_{i}", f"pattern_{j}"):
@@ -378,35 +400,129 @@ class SavingAlbumRecognitionDataToDBHandler:
 
         # Forming model instances
         people_instances = []
-        patterns_instances = []
+        new_patterns_instances = []
+        patters_instances_to_update = []
         faces_instances = []
+
         for person in self._people:
-            person_instance = People(owner=album.owner, name=f"user_{album.owner};album_{album}")
-            for pattern in person:
-                pattern_instance = Patterns(person=person_instance)
-                for face in pattern:
-                    top, right, bot, left = face.location
-                    face_instance = Faces(photo=album.photos.get(pk=face.photo_pk),
-                                          index=face.index,
-                                          pattern=pattern_instance,
-                                          loc_top=top, loc_right=right, loc_bot=bot, loc_left=left,
-                                          encoding=face.encoding.dumps())
-                    faces_instances.append(face_instance)
-                    if pattern.central_face == face:
-                        pattern_instance.central_face = face_instance
-                patterns_instances.append(pattern_instance)
-            people_instances.append(person_instance)
+            if person.pair_pk is None:
+                person_instance, person_patterns_instances, person_faces_instances = self._create_person(person, album)
+                people_instances.append(person_instance)
+                new_patterns_instances.extend(person_patterns_instances)
+                faces_instances.extend(person_faces_instances)
+            else:
+                patterns_to_create, patterns_to_update, person_faces_instances = self._join_people(person, album)
+                new_patterns_instances.extend(patterns_to_create)
+                faces_instances.extend(person_faces_instances)
+                patters_instances_to_update.extend(patterns_to_update)
 
         # Saving instances to db
         People.objects.bulk_create(people_instances)
-        self._patterns_queryset = Patterns.objects.bulk_create(patterns_instances)
+        self._new_patterns_queryset = Patterns.objects.bulk_create(new_patterns_instances)
+        Patterns.objects.bulk_update(patters_instances_to_update, ['central_face'])
         Faces.objects.bulk_create(faces_instances)
+
+    @staticmethod
+    def _create_person(person_data, album):
+        person_faces_instances = []
+        person_patterns_instances = []
+        person_instance = People(owner=album.owner, name=f"user_{album.owner};album_{album}")
+        for pattern in person_data:
+            pattern_instance = Patterns(person=person_instance)
+            for face in pattern:
+                top, right, bot, left = face.location
+                face_instance = Faces(photo=album.photos.get(pk=face.photo_pk),
+                                      index=face.index,
+                                      pattern=pattern_instance,
+                                      loc_top=top, loc_right=right, loc_bot=bot, loc_left=left,
+                                      encoding=face.encoding.dumps())
+                person_faces_instances.append(face_instance)
+                if pattern.central_face == face:
+                    pattern_instance.central_face = face_instance
+            person_patterns_instances.append(pattern_instance)
+
+        return person_instance, person_patterns_instances, person_faces_instances
+
+    def _join_people(self, person_data, album):
+        patterns_to_create = []
+        patterns_to_update = []
+        person_faces_instances = []
+
+        old_person_data, person_instance = self._get_old_person(person_pk=person_data.pair_pk, album=album)
+
+        for new_pattern in person_data:
+            united_pattern_data = None
+            for old_pattern, old_pattern_instance in zip(old_person_data, person_instance.patterns_set):
+                if new_pattern == old_pattern:
+                    pattern_instance = old_pattern_instance
+                    patterns_to_update.append(pattern_instance)
+                    united_pattern_data = self._create_united_pattern_data(new_pattern, old_pattern)
+                    break
+            else:
+                pattern_instance = Patterns(person=person_instance)
+                patterns_to_create.append(pattern_instance)
+
+            # The central face, depending on whether a new pattern is created or an old one is expanded
+            if united_pattern_data is None:
+                calculated_central_face = new_pattern.central_face
+            else:
+                calculated_central_face = united_pattern_data.central_face
+
+            # Creating Faces instances and referring them to pattern instance
+            for face in new_pattern:
+                top, right, bot, left = face.location
+                face_instance = Faces(photo=album.photos.get(pk=face.photo_pk),
+                                      index=face.index,
+                                      pattern=pattern_instance,
+                                      loc_top=top, loc_right=right, loc_bot=bot, loc_left=left,
+                                      encoding=face.encoding.dumps())
+                person_faces_instances.append(face_instance)
+
+                if calculated_central_face == face:
+                    pattern_instance.central_face = face_instance
+
+        return patterns_to_create, patterns_to_update, person_faces_instances
+
+    @staticmethod
+    def _create_united_pattern_data(new_pattern, old_pattern):
+        for i, face in enumerate(old_pattern):
+            if i == 0:
+                pattern = PatternData(face)
+            else:
+                pattern.add_face(face)
+        for face in new_pattern:
+            pattern.add_face(face)
+        pattern.find_central_face()
+        return pattern
+
+    @staticmethod
+    def _get_old_person(person_pk, album):
+        person_instance = People.objects.prefetch_related(
+            Prefetch('patterns__faces',
+                     queryset=Faces.objects.filter(photo__album__owner__pk=album.owner.pk).select_related('photo'))
+        ).get(pk=person_pk)
+
+        person = PersonData(pk=person_pk)
+        for pattern_instance in person_instance.patterns_set:
+            for i, face_instance in enumerate(pattern_instance.faces_set):
+                face = FaceData(photo_pk=face_instance.photo.pk,
+                                index=face_instance.index,
+                                location=(face_instance.loc_top, face_instance.loc_right,
+                                          face_instance.loc_bot, face_instance.loc_left),
+                                encoding=pickle.loads(face_instance.encoding))
+                if i == 0:
+                    pattern = PatternData(face)
+                else:
+                    pattern.add_face(face)
+            person.add_pattern(pattern)
+
+        return person, person_instance
 
     def _form_cluster_structure(self):
         main_cluster = Clusters.objects.get(pk=1)
         main_pool = Clusters.objects.filter(parent__pk=1).select_related('center__central_face') &\
                     Patterns.objects.filter(cluster__pk=1).select_related('central_face')
-        for pattern in self._patterns_queryset:
+        for pattern in self._new_patterns_queryset:
             pool = main_pool
             cluster = main_cluster
             while not len(pool) < CLUSTER_LIMIT:
@@ -515,4 +631,5 @@ class SavingAlbumRecognitionDataToDBHandler:
 
     def _clear_temp_files(self):
         path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}')
-        os.system(f'rm -rf {path}')
+        if os.path.exists(path):
+            os.system(f'rm -rf {path}')

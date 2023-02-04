@@ -1,4 +1,5 @@
 from django.db import models
+from django_extensions.db.fields import AutoSlugField
 
 from mainapp.models import Photos
 from photoalbums.settings import AUTH_USER_MODEL
@@ -11,6 +12,7 @@ class Faces(models.Model):
 
     photo = models.ForeignKey(Photos, on_delete=models.CASCADE, verbose_name='Photo')
     index = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Index on photo')
+    slug = AutoSlugField(populate_from=['photo__slug', 'index'], db_index=True, verbose_name='Face URL')
     pattern = models.ForeignKey('Patterns', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Pattern')
     loc_top = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Top')
     loc_right = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Right')

@@ -8,17 +8,17 @@
     {% for form in formset %}
     {% if form.fields %}
     <div class="card py-2 my-3{% if form.non_field_errors %} border-danger{% endif %}">
+        {{ form.id }}
+
+        {% if form.non_field_errors %}
+        <div class="text-danger text-center">
+            {% for error in form.non_field_errors %}
+            <p>{{ error }}</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         <div class="row">
-            {{ form.id }}
-
-            {% if form.non_field_errors %}
-            <div class="text-danger text-center">
-                {% for error in form.non_field_errors %}
-                <p>{{ error }}</p>
-                {% endfor %}
-            </div>
-            {% endif %}
-
             {% for field in form %}
             <div class="col-4 col-md-3 col-xxl-2">
                 <div class="row align-items-center">

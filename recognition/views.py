@@ -3,7 +3,7 @@ import redis
 
 from django.contrib.auth.decorators import login_required
 from django.forms import formset_factory
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
 from django.views.decorators.csrf import csrf_protect
@@ -11,6 +11,8 @@ from django.views.generic import ListView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q
 from django.views.generic.edit import FormMixin
+
+from PIL import Image
 
 from mainapp.models import *
 from .forms import *
@@ -26,6 +28,18 @@ redis_instance_raw = redis.Redis(host=REDIS_HOST,
                                  port=REDIS_PORT,
                                  db=0,
                                  decode_responses=False)
+
+
+def return_face_image(request, face_slug):
+    face = Faces.objects.select_related('photo').get_object_or_404(slug=face_slug)
+    if not request.user.is_authenticated or face.photo.is_private:
+        raise Http404
+    photo_img = Image.open(os.path.join(BASE_DIR, face.photo.original.url[1:]))
+    top, right, bottom, left = pickle.loads(face.location)
+    face_img = photo_img.crop((left, top, right, bottom))
+    response = HttpResponse(content_type='image/jpg')
+    face_img.save(response, "JPEG")
+    return response
 
 
 class AlbumsRecognitionView(LoginRequiredMixin, ListView):
@@ -616,12 +630,13 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         for x in range(1, int(redis_instance.hget(f"album_{self.object.pk}", "number_of_verified_patterns")) + 1):
             if not redis_instance.hexists(f"album_{self.object.pk}_pattern_{x}", "person"):
                 single_patterns.append(x)
-        return tuple(single_patterns)
+        self._single_patterns = tuple(single_patterns)
 
     def form_valid(self, form):
         self._group_patterns_into_people(form)
         self._set_correct_status(form)
-        if not self._get_single_patterns():
+        self._get_single_patterns()
+        if not self._single_patterns:
             self._another_album_processed = Faces.objects.filter(
                 photo__album__owner__username=self.object.owner.username_slug,
             ).exclude(photo__album__pk=self.object.pk).exists()
@@ -669,7 +684,7 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
     def get_success_url(self):
-        if self._get_single_patterns():
+        if self._single_patterns:
             return reverse_lazy('group_patterns', kwargs={'album_slug': self.object.slug})
         else:
             if self._another_album_processed:
@@ -800,25 +815,201 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs.update({
-            'match_imgs_urls': self._mathes_img_urls(),
+            'match_imgs_urls': self._get_matches_urls(),
         })
         return kwargs
 
-    # def _set_matches_img_urls(self):
-    #     # Getting index of new person and pk of old person in matches
-    #     old_people_pks = []
-    #     new_people_inds = []
-    #     i = 1
-    #     while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
-    #         if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "tech_pair"):
-    #             pk = int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "tech_pair")[7:])
-    #             old_people_pks.append(pk)
-    #             new_people_inds.append(i)
-    #         i += 1
+    def _get_matches_urls(self):
+        # Getting index of new person and pk of old person in matches
+        old_people_pks = []
+        new_people_inds = []
+        i = 1
+        while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+            if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "tech_pair"):
+                pk = int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "tech_pair")[7:])
+                old_people_pks.append(pk)
+                new_people_inds.append(i)
+            i += 1
+
+        # Getting urls of first faces of first patterns of each person
+        # new people
+        patt_inds = [redis_instance.hget(f"album_{self.object.pk}_person_{x}", "pattern_1") for x in new_people_inds]
+        face_urls = [f"/media/temp_photos/album_{self.object.pk}/patterns/{x}/1.jpg" for x in patt_inds]
+
+        # old people
+        old_face_urls = [reverse('get_face_img', kwargs={
+            'face_slug': People.objects.get(pk=x).patterns_set[:1].faces_set[:1].slug,
+        }) for x in old_people_pks]
+
+        return tuple(zip(new_people_inds, old_people_pks, face_urls, old_face_urls))
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        context.update({
+            'title': f'Album \"{self.object}\" - verifying matches',
+            'heading': "Verify automatic matching.",
+            'current_stage': 6,
+            'total_stages': 6,
+            'instructions': ["Please mark pairs, that are depicting DIFFERENT people."],
+            'button_label': "Confirm",
+        })
+
+        return context
+
+    def form_valid(self, form):
+        self._register_verified_matches_to_redis(form=form)
+        self._set_correct_status()
+        self._check_new_single_people()
+        self._check_old_single_people()
+        if not self._new_singe_people_present or not self._old_singe_people_present:
+            save_album_recognition_data_to_db_task.delay(self.object.pk)
+        return super().form_valid(form)
+
+    def _register_verified_matches_to_redis(self, form):
+        for pair, to_delete in form.cleaned_data.items():
+            if not to_delete:
+                _, new_per_ind, old_per_pk = pair.split('_')
+                redis_instance.hset(f"album_{self.object.pk}_person_{new_per_ind}", "real_pair", f"person_{old_per_pk}")
+
+    def _set_correct_status(self):
+        redis_instance.hset(f"album_{self.object.pk}", "current_stage", 6)
+        redis_instance.hset(f"album_{self.object.pk}", "status", "completed")
+        redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    def _check_new_single_people(self):
+        i = 1
+        while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+            if not redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
+                self._new_singe_people_present = True
+                break
+            i += 1
+        else:
+            self._new_singe_people_present = False
+
+    def _check_old_single_people(self):
+        queryset = People.objects.filter(owner__pk=self.object.owner.pk)
+
+        # Collecting already paired people with created people of this album
+        paired = []
+        i = 1
+        while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+            if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
+                paired.append(int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "real_pair")[7:]))
+
+        # Iterating through people, filtering already paired
+        for person in queryset:
+            if person.pk not in paired:
+                self._old_singe_people_present = True
+                break
+        else:
+            self._old_singe_people_present = False
+
+    def get_success_url(self):
+        if self._new_singe_people_present and self._old_singe_people_present:
+            return reverse_lazy('manual_matching', kwargs={'album_slug': self.object.slug})
+        else:
+            return reverse_lazy('save_waiting', kwargs={'album_slug': self.object.slug})
 
 
 class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
-    pass
+    template_name = 'recognition/manual_matching.html'
+    model = Albums
+    slug_url_kwarg = 'album_slug'
+    form_class = ManualMatchingForm
+    context_object_name = 'album'
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if not (current_stage == 6 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == 7 and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+            raise Http404
+
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self.object = self.get_object()
+
+        if request.user.username_slug != self.object.owner.username_slug:
+            raise Http404
+
+        try:
+            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
+        except TypeError:
+            raise Http404
+        if not (current_stage == 6 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == 7 and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+            raise Http404
+
+        form = self.get_form()
+        if form.is_valid():
+            return self.form_valid(form)
+        else:
+            return self.form_invalid(form)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs.update({
+            'new_ppl': self._get_new_ppl(),
+            'old_ppl': self._get_old_ppl(),
+        })
+        return kwargs
+
+    def _get_new_ppl(self):
+        new_people_inds = []
+        i = 1
+        while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+            if not redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
+                new_people_inds.append(i)
+            i += 1
+
+        patt_inds = [redis_instance.hget(f"album_{self.object.pk}_person_{x}", "pattern_1") for x in new_people_inds]
+        face_urls = [f"/media/temp_photos/album_{self.object.pk}/patterns/{x}/1.jpg" for x in patt_inds]
+
+        return tuple(zip(new_people_inds, face_urls))
+
+    def _get_old_ppl(self):
+        queryset = People.objects.filter(owner__pk=self.object.owner.pk)
+
+        # Collecting already paired people with created people of this album
+        paired = []
+        i = 1
+        while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
+            if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
+                paired.append(int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "real_pair")[7:]))
+
+        # Taking face image url of one of the faces of person,
+        # if it is not already paired with one of people from this album
+        old_ppl = []
+        for person in queryset:
+            if person.pk not in paired:
+                old_ppl.append((person.pk,
+                                reverse('get_face_img',
+                                        kwargs={'face_slug': person.patterns_set[:1].faces_set[:1].slug})))
+
+        return old_ppl
+
+    def form_valid(self, form):
+        self._done = form.cleaned_data.get('done', False)
+        if self._done:
+            save_album_recognition_data_to_db_task.delay(self.object.pk)
+        else:
+            self._register_new_pair_to_redis(form)
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        if self._done:
+            return reverse_lazy('save_waiting', kwargs={'album_slug': self.object.slug})
+        else:
+            return reverse_lazy('manual_matching', kwargs={'album_slug': self.object.slug})
 
 
 class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, DetailView):

@@ -1,7 +1,22 @@
 {% extends 'recognition/base/manual_handling_base.html' %}
 
-{% block forn_area %}
+{% block form_area %}
 <div class="card">
     {{ block.super }}
 </div>
+{% endblock %}
+
+{% block fields %}
+{% for field in form %}
+<div class="col-4 col-md-3 col-xxl-2">
+    <div class="row align-items-center">
+        <div class="col-12">
+            <img src="{{ field.label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+        </div>
+        <div class="col-12">
+            {{ field }}
+        </div>
+    </div>
+</div>
+{% endfor %}
 {% endblock %}

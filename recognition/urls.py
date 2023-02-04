@@ -3,6 +3,7 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
+    path('face_img/<slug:face_slug>', return_face_image, name='get_face_img'),
     path('my_albums', AlbumsRecognitionView.as_view(), name='recognition_main'),
     path('process_album/<slug:album_slug>', AlbumProcessingConfirmView.as_view(), name='processing_album_confirm'),
     path('process_album/<slug:album_slug>/find_faces', find_faces_view, name='find_faces'),

@@ -1,6 +1,6 @@
 from django import forms
 
-from recognition.utils import VerifyMatchField
+from .utils import VerifyMatchField
 
 
 class VerifyFramesForm(forms.Form):
@@ -61,12 +61,38 @@ class VarifyMatchesForm(forms.Form):
     def __init__(self, match_imgs_urls, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        for i, (new_per_url, old_per_url) in enumerate(match_imgs_urls, 1):
-            self.fields[f'match_{i}'] = VerifyMatchField(
+        for new_people_inds, old_people_pks, new_per_url, old_per_url in match_imgs_urls:
+            self.fields[f'pair_{new_people_inds}_{old_people_pks}'] = VerifyMatchField(
                 new_per_img=new_per_url,
                 old_per_img=old_per_url,
                 widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
                                                   'style': 'width: 25px; height: 25px;'}),
-                label=f'match {i}',
+                label=f'pair_{new_people_inds}_{old_people_pks}',
                 required=False,
             )
+
+
+class ManualMatchingForm(forms.Form):
+    done = forms.BooleanField(
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
+                                          'style': 'width: 25px; height: 25px;'}),
+        label="Here is no matches.",
+        required=False,
+    )
+
+    def __init__(self, new_ppl, old_ppl, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields['new_person'] = forms.ChoiceField(
+            widget=forms.RadioSelect(attrs={'class': 'form-check-input',
+                                            'style': 'width: 25px; height: 25px;'}),
+            label="Not matched people of this album",
+            choices=[(ind, url) for ind, url in new_ppl],
+        )
+
+        self.fields['old_person'] = forms.ChoiceField(
+            widget=forms.RadioSelect(attrs={'class': 'form-check-input',
+                                            'style': 'width: 25px; height: 25px;'}),
+            label="Previously created people",
+            choices=[(pk, url) for pk, url in old_ppl],
+        )

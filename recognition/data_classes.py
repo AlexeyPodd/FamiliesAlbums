@@ -1,5 +1,7 @@
 import face_recognition as fr
 
+from photoalbums.settings import FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE
+
 
 class FaceData:
     def __init__(self, photo_pk, index, location, encoding):
@@ -26,9 +28,10 @@ class FaceData:
 
 
 class PatternData:
-    def __init__(self, face):
+    def __init__(self, face, pk=None):
         self._faces = [face]
         self._central_face = face
+        self._pk = pk
 
     def add_face(self, face):
         if type(face) is not FaceData:
@@ -59,17 +62,23 @@ class PatternData:
             raise ValueError("Central face must be one of its faces.")
         self._central_face = value
 
-    @central_face.setter
-    def central_face(self, value):
-        if type(value) != FaceData or value not in self._faces:
-            raise ValueError("Center parameter must be face of this pattern.")
-        self._central_face = value
-
     def __iter__(self):
         return iter(self._faces)
 
     def __len__(self):
         return len(self._faces)
+
+    def __eq__(self, other):
+        if type(other) is not self.__class__:
+            raise TypeError(f"Must be same class ({self.__class__}).")
+
+        result_list = []
+        known_encs = list(map(lambda f: f.encoding, self))
+        for face in other:
+            face_result_list = fr.compare_faces(known_encs, face.encoding, FACE_RECOGNITION_TOLERANCE)
+            result_list.append(sum(face_result_list) / len(face_result_list) > PATTERN_EQUALITY_TOLERANCE)
+
+        return sum(result_list) / len(result_list) > PATTERN_EQUALITY_TOLERANCE
 
 
 class PersonData:
