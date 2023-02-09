@@ -4,11 +4,12 @@ from photoalbums.settings import FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TO
 
 
 class FaceData:
-    def __init__(self, photo_pk, index, location, encoding):
+    def __init__(self, photo_pk, index, location, encoding, pk=None):
         self._photo_pk = photo_pk
         self._index = index
         self._location = location
         self._encoding = encoding
+        self._pk = pk
 
     @property
     def photo_pk(self):
@@ -26,6 +27,10 @@ class FaceData:
     def encoding(self):
         return self._encoding
 
+    @property
+    def pk(self):
+        return self._pk
+
 
 class PatternData:
     def __init__(self, face, pk=None):
@@ -39,18 +44,19 @@ class PatternData:
         self._faces.append(face)
 
     def find_central_face(self):
-        min_dist_sum = central_face = None
-        for face in self._faces:
-            compare_face_list = self._faces.copy()
-            compare_face_list.remove(face)
-            compare_encs = list(map(lambda f: f.encoding, compare_face_list))
-            distances = fr.face_distance(compare_encs, face.encoding)
-            dist_sum = sum(distances)
-            if min_dist_sum is None or dist_sum < min_dist_sum:
-                min_dist_sum = dist_sum
-                central_face = face
+        if len(self._faces) > 1:
+            min_dist_sum = central_face = None
+            for face in self._faces:
+                compare_face_list = self._faces.copy()
+                compare_face_list.remove(face)
+                compare_encs = list(map(lambda f: f.encoding, compare_face_list))
+                distances = fr.face_distance(compare_encs, face.encoding)
+                dist_sum = sum(distances)
+                if min_dist_sum is None or dist_sum < min_dist_sum:
+                    min_dist_sum = dist_sum
+                    central_face = face
 
-        self._central_face = central_face
+            self._central_face = central_face
 
     @property
     def central_face(self):

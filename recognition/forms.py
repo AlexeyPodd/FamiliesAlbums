@@ -76,7 +76,7 @@ class ManualMatchingForm(forms.Form):
     done = forms.BooleanField(
         widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
                                           'style': 'width: 25px; height: 25px;'}),
-        label="Here is no matches.",
+        label="Here is no matches",
         required=False,
     )
 

@@ -9,11 +9,6 @@
             <h2 class="card-title">{{ title }}</h2>
             <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 550px; object-fit: contain;">
         </div>
-        <div class="col-12 mt-2">
-            <p class="h5">
-                {{ album.processed_photos }}/{{ album.public_photos }} public photos processed
-            </p>
-        </div>
         <div class="col-12 my-3">
             {% for instruction in instructions %}
             <p class="h4">{{ instruction }}</p>

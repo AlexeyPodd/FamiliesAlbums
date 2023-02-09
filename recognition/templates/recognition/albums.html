@@ -18,15 +18,15 @@
                             {% if album.is_private %}
                             albums is private
                             {% else %}
+                            {% if album.public_photos == 0 %}
+                            no public photos
+                            {% else %}
                             {% if album.public_photos != album.processed_photos %}{{ album.processed_photos }}/{{ album.public_photos }}{% else %}all{% endif %} public photos processed
                             {% endif %}
-                        </p>
-                        <a href="{% url 'processing_album_confirm' album.slug %}" class="btn btn-primary"{% if album.is_private or album.public_photos == album.processed_photos %} disabled{% endif %}>
-                            {% if album.public_photos == album.processed_photos or album.processed_photos == 0 %}
-                            Process Album
-                            {% else %}
-                            Process New Photos
                             {% endif %}
+                        </p>
+                        <a{% if not album.is_private or album.public_photos != 0 %} href="{% url 'processing_album_confirm' album.slug %}"{% endif %} class="btn btn-primary{% if album.is_private or album.public_photos == 0 %} disabled" aria-disabled="true"{% endif %}">
+                            Process Album
                         </a>
                     </div>
                 </div>

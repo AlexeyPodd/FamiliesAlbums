@@ -36,3 +36,11 @@ def save_album_recognition_data_to_db_task(album_pk):
     handler = SavingAlbumRecognitionDataToDBHandler(album_pk)
     handler.handle()
     return f"Recognition data of {album_pk} album successfully saved to Data Base."
+
+
+@shared_task
+def delete_all_temp_data_task(album_pk):
+    logger.info(f"Starting to delete temp files and redis data of album {album_pk}.")
+    handler = ClearTempDataHandler(album_pk)
+    handler.handle()
+    return f"Deletion temp files and redis data of {album_pk} album successfully done."
