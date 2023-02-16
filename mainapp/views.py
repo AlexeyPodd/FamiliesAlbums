@@ -15,6 +15,7 @@ from django.db.models import Count
 from accounts.models import User
 from .forms import *
 from .utils import get_zip, delete_from_favorites, FavoritesPaginator, AboutPageInfo
+from .tasks import album_deletion_task
 
 
 class MainPageView(ListView):
@@ -300,7 +301,7 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
         self.photos_formset = PhotosInlineFormset(request.POST, instance=self.object)
 
         if request.POST.get('delete', False):
-            self.object.delete()
+            album_deletion_task.delay(self.object.pk)
             return redirect('user_albums', username_slug=self.kwargs['username_slug'])
 
         if form.is_valid() and self.photos_formset.is_valid():

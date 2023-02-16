@@ -1,7 +1,5 @@
 from django import forms
 
-from .utils import VerifyMatchField
-
 
 class VerifyFramesForm(forms.Form):
     def __init__(self, *args, faces_amount=0, **kwargs):
@@ -34,7 +32,7 @@ class BaseVerifyPatternFormset(forms.BaseFormSet):
 
     def add_fields(self, form, index):
         super().add_fields(form, index)
-        if index >= self._number_of_verified_patterns:
+        if index >= self._number_of_verified_patterns and self._faces_amounts[index] > 1:
             for i in range(1, self._faces_amounts[index] + 1):
                 form.fields[f'face_{i}'] = forms.BooleanField(
                     widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
@@ -61,13 +59,11 @@ class VarifyMatchesForm(forms.Form):
     def __init__(self, match_imgs_urls, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        for new_people_inds, old_people_pks, new_per_url, old_per_url in match_imgs_urls:
-            self.fields[f'pair_{new_people_inds}_{old_people_pks}'] = VerifyMatchField(
-                new_per_img=new_per_url,
-                old_per_img=old_per_url,
+        for new_people_ind, old_people_pk, *_ in match_imgs_urls:
+            self.fields[f'pair_{new_people_ind}_{old_people_pk}'] = forms.BooleanField(
                 widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
                                                   'style': 'width: 25px; height: 25px;'}),
-                label=f'pair_{new_people_inds}_{old_people_pks}',
+                label=f'new{new_people_ind}_old{old_people_pk}',
                 required=False,
             )
 
@@ -83,16 +79,27 @@ class ManualMatchingForm(forms.Form):
     def __init__(self, new_ppl, old_ppl, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.fields['new_person'] = forms.ChoiceField(
+        self.fields['new_ppl'] = forms.ChoiceField(
             widget=forms.RadioSelect(attrs={'class': 'form-check-input',
                                             'style': 'width: 25px; height: 25px;'}),
             label="Not matched people of this album",
             choices=[(ind, url) for ind, url in new_ppl],
+            required=False,
         )
 
-        self.fields['old_person'] = forms.ChoiceField(
+        self.fields['old_ppl'] = forms.ChoiceField(
             widget=forms.RadioSelect(attrs={'class': 'form-check-input',
                                             'style': 'width: 25px; height: 25px;'}),
             label="Previously created people",
             choices=[(pk, url) for pk, url in old_ppl],
+            required=False,
         )
+
+    def clean(self):
+        super().clean()
+        new_person_picked = bool(self.cleaned_data.get('new_ppl'))
+        old_person_picked = bool(self.cleaned_data.get('old_ppl'))
+        done = self.cleaned_data.get('done')
+
+        if not done and (new_person_picked and not old_person_picked or not new_person_picked and old_person_picked):
+            self.add_error(None, "Only one person was picked. You should chose pair, or mark \"Here is no matches\".")

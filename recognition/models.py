@@ -13,7 +13,7 @@ class Faces(models.Model):
     photo = models.ForeignKey(Photos, on_delete=models.CASCADE, verbose_name='Photo')
     index = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Index on photo')
     slug = AutoSlugField(populate_from=['photo__slug', 'index'], db_index=True, verbose_name='Face URL')
-    pattern = models.ForeignKey('Patterns', on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Pattern')
+    pattern = models.ForeignKey('Patterns', on_delete=models.CASCADE, null=True, blank=True, verbose_name='Pattern')
     loc_top = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Top')
     loc_right = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Right')
     loc_bot = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='Location Bottom')
@@ -42,7 +42,7 @@ class People(models.Model):
     """Model contains different facial patterns of one person."""
 
     owner = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='user', verbose_name='User')
-    name = models.CharField(max_length=32, verbose_name='Name')
+    name = models.CharField(max_length=100, verbose_name='Name')
 
     def __str__(self):
         return f"{self.owner}__{self.name}"

@@ -8,7 +8,7 @@ from .utils import get_photo_save_path, TruncatingCharField
 
 
 class Albums(models.Model):
-    title = models.CharField(max_length=127, verbose_name='Title')
+    title = models.CharField(max_length=100, verbose_name='Title')
     slug = AutoSlugField(populate_from=['owner__username_slug', 'title'], db_index=True, verbose_name='URL')
     date_start = models.DateField(blank=True, null=True, verbose_name='Photo date start')
     date_end = models.DateField(blank=True, null=True, verbose_name='Photo date end')

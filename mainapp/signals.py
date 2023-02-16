@@ -6,10 +6,12 @@ from django.dispatch import receiver
 
 from photoalbums.settings import BASE_DIR
 from .models import Photos
+from recognition.models import Faces
 
 
 @receiver(pre_delete, sender=Photos)
 def photos_delete(sender, instance, **kwargs):
+    # Deletion of image file
     if instance.original is not None and\
             not Photos.objects.filter(Q(original=instance.original) & ~ Q(pk=instance.pk)).exists():
 
@@ -23,3 +25,7 @@ def photos_delete(sender, instance, **kwargs):
                 directory = os.path.dirname(directory)
             except OSError:
                 break
+
+    # Faces set deletion
+    for face in instance.faces_set.all():
+        Faces.objects.get(pk=face.pk).delete()

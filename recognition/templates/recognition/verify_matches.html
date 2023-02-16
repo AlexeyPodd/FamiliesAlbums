@@ -1,15 +1,17 @@
 {% extends 'recognition/base/manual_handling_base.html' %}
+{% load recognition_tags %}
 
 {% block fields %}
 {% for field in form %}
+{% with key=field.label %}
 <div class="col-12 col-md-6">
     <div class="card">
         <div class="row align-items-center">
             <div class="col-4">
-                <img src="{{ field.new_per_img }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                <img src="{{ new_ppl_urls|lookup:key }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
             </div>
             <div class="col-4">
-                <img src="{{ field.old_per_img }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                <img src="{{ old_ppl_urls|lookup:key }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
             </div>
             <div class="col-4">
                 {{ field }}
@@ -17,5 +19,6 @@
         </div>
     </div>
 </div>
+{% endwith %}
 {% endfor %}
 {% endblock %}

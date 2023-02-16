@@ -1,35 +1,68 @@
 import os
+import pickle
+import re
 
 from django.contrib.auth.decorators import login_required
 from django.forms import formset_factory
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
-from django.urls import reverse_lazy
+from django.urls import reverse_lazy, reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.generic import ListView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q
 from django.views.generic.edit import FormMixin
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
-from mainapp.models import *
+from mainapp.models import Photos, Albums
+from .data_classes import PatternData, FaceData
 from .forms import *
-from .models import Faces
-from .tasks import *
-from photoalbums.settings import REDIS_DATA_EXPIRATION_SECONDS, MEDIA_ROOT
-from .utils import redis_instance, redis_instance_raw, set_album_photos_processed, RecognitionSupporter
+from .models import Faces, People
+from .tasks import recognition_task, print_task
+from photoalbums.settings import REDIS_DATA_EXPIRATION_SECONDS, MEDIA_ROOT, BASE_DIR
+from .utils import set_album_photos_processed, redis_instance, redis_instance_raw
+from .mixin_views import RecognitionMixin
 
 
 def return_face_image_view(request, face_slug):
-    face = Faces.objects.select_related('photo').get_object_or_404(slug=face_slug)
+    face = Faces.objects.select_related('photo').get(slug=face_slug)
     if not request.user.is_authenticated or face.photo.is_private:
         raise Http404
     photo_img = Image.open(os.path.join(BASE_DIR, face.photo.original.url[1:]))
-    top, right, bottom, left = pickle.loads(face.location)
+    top, right, bottom, left = face.loc_top, face.loc_right, face.loc_bot, face.loc_left
     face_img = photo_img.crop((left, top, right, bottom))
     response = HttpResponse(content_type='image/jpg')
     face_img.save(response, "JPEG")
+    return response
+
+
+def return_photo_with_framed_faces(request, photo_slug):
+    photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
+
+    if not request.user.is_authenticated or request.user.pk != photo.album.owner.pk or photo.is_private:
+        raise Http404
+
+    # Loading faces locations from redis
+    faces_locations = []
+    i = 1
+    while redis_instance.hexists(f"photo_{photo.pk}", f"face_{i}_location"):
+        faces_locations.append(pickle.loads(redis_instance_raw.hget(f"photo_{photo.pk}", f"face_{i}_location")))
+        i += 1
+
+    # Drawing
+    image = Image.open(os.path.join(BASE_DIR, photo.original.url[1:]))
+    draw = ImageDraw.Draw(image)
+    for i, location in enumerate(faces_locations, 1):
+        top, right, bottom, left = location
+        draw.rectangle(((left, top), (right, bottom)), outline=(0, 255, 0), width=4)
+        fontsize = (bottom - top) // 3
+        font = ImageFont.truetype("arialbd.ttf", fontsize)
+        draw.text((left, top), str(i), fill=(255, 0, 0), font=font)
+    del draw
+
+    response = HttpResponse(content_type='image/jpg')
+    image.save(response, "JPEG")
     return response
 
 
@@ -97,12 +130,12 @@ def find_faces_view(request, album_slug):
     redis_instance.hset(f"album_{album.pk}", "status", "processing")
     redis_instance.expire(f"album_{album.pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
-    face_searching_task.delay(album.pk)
+    recognition_task.delay(album.pk, 1)
 
     return redirect('frames_waiting', album_slug=album_slug, permanent=True)
 
 
-class AlbumFramesWaitingView(LoginRequiredMixin, DetailView):
+class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
     recognition_stage = 1
     model = Albums
     context_object_name = 'album'
@@ -122,8 +155,9 @@ class AlbumFramesWaitingView(LoginRequiredMixin, DetailView):
         if current_stage not in (self.recognition_stage - 1, self.recognition_stage):
             raise Http404
 
-        if not self._any_faces_founded():
-            return redirect('no_faces', kwargs={'album_slug': self.object.slug})
+        if self._photos_processed_and_no_faces_found():
+            self._set_no_faces_and_clear(album_pk=self.object.pk)
+            return redirect('no_faces', album_slug=self.object.slug, permanent=True)
 
         return super().get(request, *args, **kwargs)
 
@@ -155,7 +189,6 @@ class AlbumFramesWaitingView(LoginRequiredMixin, DetailView):
         first_photo_slug = redis_instance.lindex(f"album_{self.object.pk}_photos", 0)
 
         context.update({
-            'first_photo_slug': redis_instance.lindex(f"album_{self.object.pk}_photos", 0),
             'heading': "Searching for faces on album's photos",
             'current_stage': self.recognition_stage,
             'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
@@ -170,12 +203,17 @@ class AlbumFramesWaitingView(LoginRequiredMixin, DetailView):
 
         return context
 
-    def _any_faces_founded(self):
-        for pk in map(lambda p: p.pk, self.object.photos_set):
+    def _photos_processed_and_no_faces_found(self):
+        pks = tuple(map(lambda p: p.pk, self.object.photos_set.all()))
+        for pk in pks:
+            if not redis_instance.exists(f"photo_{pk}"):
+                return False
+
+        for pk in pks:
             if redis_instance.hexists(f"photo_{pk}", "face_1_location"):
-                return True
-        else:
-            return False
+                return False
+
+        return True
 
     def get_queryset(self):
         queryset = self.model.objects.select_related('owner').filter(owner__pk=self.request.user.pk).annotate(
@@ -185,7 +223,7 @@ class AlbumFramesWaitingView(LoginRequiredMixin, DetailView):
         return queryset
 
 
-class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
+class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
     recognition_stage = 2
     model = Photos
     template_name = 'recognition/verify_frames.html'
@@ -204,14 +242,16 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.album.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.album.pk}", "status") == "processing" or
-                current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.album.pk}", "status") == "completed"):
+        if not (current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.album.pk}", "status") == "processing" or
+                current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.album.pk}", "status") == "completed"):
             raise Http404
 
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
-        self.album = Albums.objects.get(slug=kwargs['album_slug'])
+        self.album = Albums.objects.prefetch_related('photos_set').get(slug=kwargs['album_slug'])
         self.object = self.get_object(queryset=self.model.objects.filter(album_id=self.album.pk))
 
         if request.user.username_slug != self.album.owner.username_slug or self.object.is_private:
@@ -221,8 +261,10 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.album.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.album.pk}", "status") == "processing" or
-                current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.album.pk}", "status") == "completed"):
+        if not (current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.album.pk}", "status") == "processing" or
+                current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.album.pk}", "status") == "completed"):
             raise Http404
 
         # Base Form method post
@@ -248,7 +290,8 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
             if self._any_faces_founded():
                 self._send_faces_to_relate()
             else:
-                redirect('no_faces', kwargs={'album_slug': self.album.slug})
+                self._set_no_faces_and_clear(album_pk=self.album.pk)
+                return redirect('no_faces', album_slug=self.album.slug, permanent=True)
 
         return super().form_valid(form)
 
@@ -279,23 +322,23 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
         redis_instance.hincrby(f"album_{self.album.pk}", "number_of_processed_photos")
 
         if int(redis_instance.hget(f"album_{self.album.pk}", "current_stage")) == self.recognition_stage - 1 and \
-                self.object.slug == redis_instance.lindex(f"album_{self.object.pk}_photos", 0):
+                self.object.slug == redis_instance.lindex(f"album_{self.album.pk}_photos", 0):
             redis_instance.hset(f"album_{self.album.pk}", "current_stage", self.recognition_stage)
             redis_instance.hset(f"album_{self.album.pk}", "status", "processing")
             redis_instance.expire(f"album_{self.album.pk}", REDIS_DATA_EXPIRATION_SECONDS)
         elif int(redis_instance.hget(f"album_{self.album.pk}", "current_stage")) == self.recognition_stage and \
-                self.object.slug == redis_instance.lindex(f"album_{self.object.album.pk}_photos", -1):
+                self.object.slug == redis_instance.lindex(f"album_{self.album.pk}_photos", -1):
             redis_instance.hset(f"album_{self.album.pk}", "status", "completed")
             redis_instance.hset(f"album_{self.album.pk}", "number_of_processed_photos", 0)
             redis_instance.expire(f"album_{self.album.pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
     def get_success_url(self):
-        if self.object.slug == redis_instance.lindex(f"album_{self.object.album.pk}_photos", -1):
+        if self.object.slug == redis_instance.lindex(f"album_{self.album.pk}_photos", -1):
             return reverse_lazy('patterns_waiting', kwargs={'album_slug': self.album.slug})
         else:
             next_photo_slug = redis_instance.lindex(
-                f"album_{self.object.album.pk}_photos",
-                redis_instance.lpos(f"album_{self.object.album.pk}_photos", self.object.slug) + 1,
+                f"album_{self.album.pk}_photos",
+                redis_instance.lpos(f"album_{self.album.pk}_photos", self.object.slug) + 1,
             )
             return reverse_lazy('verify_frames', kwargs={'album_slug': self.album.slug, 'photo_slug': next_photo_slug})
 
@@ -303,7 +346,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
         context = super().get_context_data(**kwargs)
 
         current_photo_number = int(redis_instance.hget(f"album_{self.album.pk}", "number_of_processed_photos")) + 1
-        public_photos = self.album.photos_set.all().count()
+        photos_with_faces = redis_instance.llen(f"album_{self.album.pk}_photos")
         instructions = [
             "Please mark the faces of children under 10 and objects that are not faces.",
             "They will be removed.",
@@ -315,13 +358,10 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
 
         context.update({
             'title': f'Album \"{self.album}\" - verifying frames',
-            'heading': f"Verifying photo {self.object.title} ({current_photo_number}/{public_photos})",
+            'heading': f"Verifying photo {self.object.title} ({current_photo_number}/{photos_with_faces})",
             'instructions': instructions,
             'current_stage': self.recognition_stage,
             'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
-            'photo_with_frames_url': os.path.join('/media/temp_photos',
-                                                  f'album_{self.album.pk}/frames',
-                                                  f"photo_{self.object.pk}.jpg"),
             'button_label': button_label,
         })
 
@@ -332,10 +372,10 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, DetailView):
         redis_instance.hset(f"album_{self.album.pk}", "status", "processing")
         redis_instance.expire(f"album_{self.album.pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
-        relate_faces_task.delay(self.album.pk)
+        recognition_task.delay(self.album.pk, self.recognition_stage + 1)
 
     def _any_faces_founded(self):
-        for pk in map(lambda p: p.pk, self.object.photos_set):
+        for pk in map(lambda p: p.pk, self.album.photos_set.all()):
             if redis_instance.hexists(f"photo_{pk}", "face_1_location"):
                 return True
         else:
@@ -417,8 +457,10 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
 
         self._set_faces_amounts()
@@ -427,6 +469,13 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
                                                                         "number_of_verified_patterns"))
         except TypeError:
             self._number_of_verified_patterns = 0
+
+        # If all patterns have only one face each
+        if all(map(lambda x: x == 1, self._faces_amounts[self._number_of_verified_patterns:])):
+            self._register_verified_patterns_to_redis(len(self._faces_amounts))
+            self._set_single_face_is_central()
+            self._set_correct_status(all_patterns_have_single_faces=True)
+            return redirect('group_patterns', album_slug=self.object.slug, permanent=True)
 
         VerifyPatternFormset = formset_factory(self.form_class,
                                                formset=BaseVerifyPatternFormset,
@@ -447,8 +496,10 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
 
         form = self.get_form()
@@ -496,12 +547,13 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
 
     def form_valid(self, form):
         path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self.object.pk}/patterns')
-        patterns_amount = len(self._faces_amounts)
-        patterns_amount = self._replace_odd_faces_to_new_pattern(patterns_amount=patterns_amount,
+        old_patterns_amount = len(self._faces_amounts)
+        patterns_amount = self._replace_odd_faces_to_new_pattern(patterns_amount=old_patterns_amount,
                                                                  patterns_dir=path)
         self._renumber_patterns_faces_data_and_files(patterns_amount=patterns_amount,
                                                      patterns_dir=path)
-        self._recalculate_patterns_centers()
+        self._recalculate_patterns_centers(old_patterns_amount)
+        self._register_verified_patterns_to_redis(old_patterns_amount)
         self._set_correct_status()
         return super().form_valid(form)
 
@@ -541,10 +593,6 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
                     new_path = os.path.join(patterns_dir, str(patterns_amount), f"{face_name[5:]}.jpg")
                     os.replace(old_path, new_path)
 
-            # If pattern was not verified previously, but did now
-            if self.formset.forms[i-1].fields:
-                redis_instance.hincrby(f"album_{self.object.pk}", "number_of_verified_patterns")
-
         return patterns_amount
 
     def _renumber_patterns_faces_data_and_files(self, patterns_amount, patterns_dir):
@@ -570,10 +618,10 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             redis_instance.hset(f"album_{self.object.pk}_pattern_{i}", "faces_amount", count)
             redis_instance.expire(f"album_{self.object.pk}_pattern_{i}", REDIS_DATA_EXPIRATION_SECONDS)
 
-    def _recalculate_patterns_centers(self):
-        verified_patterns_amount = int(redis_instance.hget(f"album_{self.object.pk}", "number_of_verified_patterns"))
+    def _recalculate_patterns_centers(self, verified_patterns_amount):
         for i in range(1, verified_patterns_amount + 1):
-            # If pattern was not verified previously, but did now
+            # If pattern was not verified previously, but did now;
+            # and it is not have one face (form wouldn't add fields)
             if self.formset.forms[i-1].fields:
                 # Get PatterData from redis
                 for k in range(1, int(redis_instance.hget(f"album_{self.object.pk}_pattern_{i}",
@@ -598,14 +646,21 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
                         redis_instance.hset(f"album_{self.object.pk}_pattern_{i}", "central_face", f"face_{j}")
                         break
 
-    def _set_correct_status(self):
+    def _set_single_face_is_central(self):
+        for i in range(self._number_of_verified_patterns + 1, len(self._faces_amounts) + 1):
+            redis_instance.hset(f"album_{self.object.pk}_pattern_{i}", "central_face", f"face_1")
+
+    def _register_verified_patterns_to_redis(self, verified_patterns_amount):
+        redis_instance.hset(f"album_{self.object.pk}", "number_of_verified_patterns", verified_patterns_amount)
+
+    def _set_correct_status(self, all_patterns_have_single_faces=False):
         if int(redis_instance.hget(f"album_{self.object.pk}", "current_stage")) == self.recognition_stage - 1:
             redis_instance.hset(f"album_{self.object.pk}", "current_stage", self.recognition_stage)
             redis_instance.hset(f"album_{self.object.pk}", "status", "processing")
             redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
         if int(redis_instance.hget(f"album_{self.object.pk}", "current_stage")) == self.recognition_stage and \
-                not self.formset.has_changed():
+                (all_patterns_have_single_faces or not self.formset.has_changed()):
             redis_instance.hset(f"album_{self.object.pk}", "status", "completed")
             redis_instance.expire(f"album_{self.object.pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
@@ -628,8 +683,10 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
 
         return super().get(request, *args, **kwargs)
@@ -644,8 +701,10 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
 
         form = self.get_form()
@@ -690,9 +749,9 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
                 photo__album__owner__username=self.object.owner.username_slug,
             ).exclude(photo__album__pk=self.object.pk).exists()
             if self._another_album_processed:
-                compare_new_and_existing_people_task.delay(self.object.pk)
+                recognition_task.delay(self.object.pk, self.recognition_stage + 1)
             else:
-                save_album_recognition_data_to_db_task.delay(self.object.pk)
+                recognition_task.delay(self.object.pk, AlbumRecognitionDataSavingWaitingView.recognition_stage)
         self._set_correct_status(form)
         return super().form_valid(form)
 
@@ -844,9 +903,13 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
+
+        self._get_matches_urls()
 
         return super().get(request, *args, **kwargs)
 
@@ -860,9 +923,13 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
+
+        self._get_matches_urls()
 
         form = self.get_form()
         if form.is_valid():
@@ -873,7 +940,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs.update({
-            'match_imgs_urls': self._get_matches_urls(),
+            'match_imgs_urls': self._matches_urls,
         })
         return kwargs
 
@@ -896,13 +963,19 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
 
         # old people
         old_face_urls = [reverse('get_face_img', kwargs={
-            'face_slug': People.objects.get(pk=x).patterns_set[:1].faces_set[:1].slug,
+            'face_slug': People.objects.get(pk=x).patterns_set.all()[0].faces_set.all()[0].slug,
         }) for x in old_people_pks]
 
-        return tuple(zip(new_people_inds, old_people_pks, face_urls, old_face_urls))
+        self._matches_urls = tuple(zip(new_people_inds, old_people_pks, face_urls, old_face_urls))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+
+        new_ppl_urls = {}
+        old_ppl_urls = {}
+        for new_people_ind, old_people_pk, face_url, old_face_url in self._matches_urls:
+            new_ppl_urls.update({f"new{new_people_ind}_old{old_people_pk}": face_url})
+            old_ppl_urls.update({f"new{new_people_ind}_old{old_people_pk}": old_face_url})
 
         context.update({
             'title': f'Album \"{self.object}\" - verifying matches',
@@ -911,6 +984,8 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
             'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
             'instructions': ["Please mark pairs, that are depicting DIFFERENT people."],
             'button_label': "Confirm",
+            'new_ppl_urls': new_ppl_urls,
+            'old_ppl_urls': old_ppl_urls,
         })
 
         return context
@@ -920,7 +995,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
         self._check_new_single_people()
         self._check_old_single_people()
         if not self._new_singe_people_present or not self._old_singe_people_present:
-            save_album_recognition_data_to_db_task.delay(self.object.pk)
+            recognition_task.delay(self.object.pk, AlbumRecognitionDataSavingWaitingView.recognition_stage)
         self._set_correct_status()
         return super().form_valid(form)
 
@@ -958,6 +1033,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
         while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
             if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
                 paired.append(int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "real_pair")[7:]))
+            i += 1
 
         # Iterating through people, filtering already paired
         for person in queryset:
@@ -992,8 +1068,10 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage in (self.recognition_stage - 2, self.recognition_stage - 1) and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage in (self.recognition_stage - 2, self.recognition_stage - 1) and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
 
         # check after redirect from 6 stage
@@ -1012,8 +1090,10 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
             raise Http404
-        if not (current_stage == self.recognition_stage - 1 and redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
-                current_stage == self.recognition_stage and redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
+        if not (current_stage == self.recognition_stage - 1 and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "completed" or
+                current_stage == self.recognition_stage and
+                redis_instance.hget(f"album_{self.object.pk}", "status") == "processing"):
             raise Http404
 
         form = self.get_form()
@@ -1060,7 +1140,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
         return tuple(zip(new_people_inds, face_urls))
 
     def _get_old_ppl(self):
-        queryset = People.objects.filter(owner__pk=self.object.owner.pk)
+        queryset = People.objects.prefetch_related('patterns_set__faces_set').filter(owner__pk=self.object.owner.pk)
 
         # Collecting already paired people with created people of this album
         paired = []
@@ -1068,6 +1148,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
         while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
             if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
                 paired.append(int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "real_pair")[7:]))
+            i += 1
 
         # Taking face image url of one of the faces of person,
         # if it is not already paired with one of people from this album
@@ -1076,12 +1157,15 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
             if person.pk not in paired:
                 old_ppl.append((person.pk,
                                 reverse('get_face_img',
-                                        kwargs={'face_slug': person.patterns_set[:1].faces_set[:1].slug})))
+                                        kwargs={'face_slug': person.patterns_set.all()[0].faces_set.all()[0].slug})))
 
         return old_ppl
 
     def form_valid(self, form):
         self._done = form.cleaned_data.get('done', False)
+
+        if not self._done and not form.cleaned_data.get('new_ppl') and not form.cleaned_data.get('new_ppl'):
+            self._done = True
 
         if not self._done:
             self._register_new_pair_to_redis(form=form)
@@ -1090,7 +1174,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
         self._set_correct_status()
 
         if self._done:
-            save_album_recognition_data_to_db_task.delay(self.object.pk)
+            recognition_task.delay(self.object.pk, AlbumRecognitionDataSavingWaitingView.recognition_stage)
 
         return super().form_valid(form)
 
@@ -1128,6 +1212,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
         while redis_instance.exists(f"album_{self.object.pk}_person_{i}"):
             if redis_instance.hexists(f"album_{self.object.pk}_person_{i}", "real_pair"):
                 paired.append(int(redis_instance.hget(f"album_{self.object.pk}_person_{i}", "real_pair")[7:]))
+            i += 1
 
         # Iterating through people, filtering already paired
         for person in queryset:
@@ -1162,7 +1247,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
             return False
 
 
-class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, DetailView):
+class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
     recognition_stage = 9
     model = Albums
     context_object_name = 'album'
@@ -1177,14 +1262,15 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, DetailView):
         try:
             current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
         except TypeError:
-            raise Http404
-        if current_stage != self.recognition_stage:
-            raise Http404
-
-        self.status = redis_instance.hget(f"album_{self.object.pk}", "status")
-
-        if self.status == "complete":
-            delete_all_temp_data_task.delay(self.object.pk)
+            if redis_instance.get(f"album_{self.object.pk}_finished") == '1':
+                self.status = 'complete'
+            else:
+                raise Http404
+        else:
+            if current_stage != self.recognition_stage:
+                raise Http404
+            else:
+                self.status = redis_instance.hget(f"album_{self.object.pk}", "status")
 
         return super().get(request, *args, **kwargs)
 
@@ -1227,29 +1313,23 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, DetailView):
         return context
 
 
-class NoFacesAlbumView(LoginRequiredMixin, DetailView):
+class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
     model = Albums
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
-    template_name = 'recognition/waiting_base.html'
+    template_name = 'recognition/base/waiting_base.html'
 
     def get(self, request, *args, **kwargs):
         self.object = self.get_object()
         if request.user.username_slug != self.object.owner.username_slug:
             raise Http404
 
-        try:
-            current_stage = int(redis_instance.hget(f"album_{self.object.pk}", "current_stage"))
-        except TypeError:
-            raise Http404
-
-        if current_stage not in (1, 2):
+        if not redis_instance.get(f"album_{self.object.pk}_finished") == "no_faces":
             raise Http404
 
         if self._photos_processed_and_any_faces_found():
             raise Http404
 
-        delete_all_temp_data_task.delay(self.object.pk)
         set_album_photos_processed(album_pk=self.object.pk, status=True)
 
         return super().get(request, *args, **kwargs)
@@ -1274,7 +1354,7 @@ class NoFacesAlbumView(LoginRequiredMixin, DetailView):
         return context
 
     def _photos_processed_and_any_faces_found(self):
-        pks = tuple(map(lambda p: p.pk, self.object.photos_set))
+        pks = tuple(map(lambda p: p.pk, self.object.photos_set.all()))
         for pk in pks:
             if not redis_instance.exists(f"photo_{pk}"):
                 return False

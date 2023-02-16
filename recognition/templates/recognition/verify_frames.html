@@ -3,7 +3,7 @@
 {% block form_area %}
 <div class="row">
     <div class="col-12 col-md-9">
-        <img src="{{ photo_with_frames_url }}" alt="" style="width: 100%; height: auto; max-height: 750px; object-fit: contain;">
+        <img src="{% url 'photo_with_framed_faces' photo_slug=photo.slug %}" alt="" style="width: 100%; height: auto; max-height: 750px; object-fit: contain;">
     </div>
     <div class="col-12 col-md-3 mt-3">
         {{ block.super }}

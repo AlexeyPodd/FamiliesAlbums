@@ -1,46 +1,25 @@
 from celery.utils.log import get_task_logger
 from celery import shared_task
 
-from .photos_handlers import *
+from .photos_handlers import FaceSearchingHandler, RelateFacesHandler, ComparingExistingAndNewPeopleHandler, \
+    SavingAlbumRecognitionDataToDBHandler, ClearTempDataHandler
 
 logger = get_task_logger(__name__)
+recognition_handlers = {1: FaceSearchingHandler,
+                        3: RelateFacesHandler,
+                        6: ComparingExistingAndNewPeopleHandler,
+                        9: SavingAlbumRecognitionDataToDBHandler,
+                        -1: ClearTempDataHandler}
 
 
 @shared_task
-def face_searching_task(album_pk):
-    logger.info(f"Starting to process {album_pk}. Now searching for faces on album's photos.")
-    handler = FaceSearchingHandler(album_pk)
+def recognition_task(album_pk: int, recognition_stage: int):
+    handler = recognition_handlers[recognition_stage](album_pk)
+    logger.info(handler.start_message)
     handler.handle()
-    return f"Search for faces on {album_pk} album's photos has been finished."
+    return handler.finish_message
 
 
 @shared_task
-def relate_faces_task(album_pk):
-    logger.info(f"Starting to relate founded faces on photos of album {album_pk}.")
-    handler = RelateFacesHandler(album_pk)
-    handler.handle()
-    return f"Relating faces of {album_pk} album has been finished."
-
-
-@shared_task
-def compare_new_and_existing_people_task(album_pk):
-    logger.info(f"Starting to compare created people of album {album_pk} with previously created people.")
-    handler = ComparingExistingAndNewPeopleHandler(album_pk)
-    handler.handle()
-    return f"Comparing people of {album_pk} album with previously created people has been finished."
-
-
-@shared_task
-def save_album_recognition_data_to_db_task(album_pk):
-    logger.info(f"Starting to save album {album_pk} recognition data to Data Base.")
-    handler = SavingAlbumRecognitionDataToDBHandler(album_pk)
-    handler.handle()
-    return f"Recognition data of {album_pk} album successfully saved to Data Base."
-
-
-@shared_task
-def delete_all_temp_data_task(album_pk):
-    logger.info(f"Starting to delete temp files and redis data of album {album_pk}.")
-    handler = ClearTempDataHandler(album_pk)
-    handler.handle()
-    return f"Deletion temp files and redis data of {album_pk} album successfully done."
+def print_task(message: str):
+    return message
