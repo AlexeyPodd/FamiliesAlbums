@@ -6,8 +6,8 @@
     {% block heading %}
     <div class="row my-3">
         <div class="col-12">
-            <h2>{{ heading }}</h2>
             <p class="h3">Stage {{ current_stage }}/{{ total_stages }}</p>
+            <h2>{{ heading }}</h2>
             {% for instruction in instructions %}
             <p class="h5">{{ instruction }}</p>
             {% endfor %}

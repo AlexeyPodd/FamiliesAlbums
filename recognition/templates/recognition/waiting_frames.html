@@ -12,3 +12,5 @@
     </p>
 </div>
 {% endblock %}
+
+{% block next_url %}{% url next album_slug=album.slug photo_slug=photo_slug %}{% endblock %}

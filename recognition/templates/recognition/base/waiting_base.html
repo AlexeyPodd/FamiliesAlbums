@@ -7,8 +7,8 @@
     {% block heading %}
     <div class="row my-3">
         <div class="col-12">
-            <h2>{{ heading }}</h2>
             <p class="h3">Stage {{ current_stage }}/{{ total_stages }}</p>
+            <h2>{{ heading }}</h2>
         </div>
     </div>
     {% endblock %}
@@ -31,7 +31,7 @@
         {% endblock %}
 
         <div class="col-12 mt-auto">
-            <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{{ success_url }}"{% else %}aria-disabled="true"{% endif %}>{{ button_label }}</a>
+            <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{% block next_url %}{% url next %}{% endblock %}"{% else %}aria-disabled="true"{% endif %}>{{ button_label }}</a>
         </div>
     </div>
     {% endblock %}

@@ -38,17 +38,22 @@ class BaseHandler:
 
 class FaceSearchingHandler(BaseHandler):
     """Class for handle automatic finding faces on album's photos."""
-    start_message_template = "Starting to process album_pk. Now searching for faces on album's photos."
-    finish_message_template = "Search for faces on album_pk album's photos has been finished."
+    start_message_template = "Starting to process album_pk. Now searching for faces on album\'s photos."
+    finish_message_template = "Search for faces on album_pk album\'s photos has been finished."
 
     def __init__(self, album_pk):
         super().__init__(album_pk)
-        self._path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{album_pk}/frames')
+        self._path = None
 
     def handle(self):
+        self._get_path()
         self._prepare_to_recognition()
         self._face_search_and_save_to_redis()
         self._save_album_report()
+
+    def _get_path(self):
+        if self._path is None:
+            self._path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/frames')
 
     def _prepare_to_recognition(self):
         DataDeletionSupporter.prepare_to_recognition(self._album_pk)
@@ -102,18 +107,24 @@ class RelateFacesHandler(BaseHandler):
 
     def __init__(self, album_pk):
         super().__init__(album_pk)
-        self._path = self._prepare_path()
-        self._queryset = Photos.objects.filter(album__pk=self._album_pk, is_private=False)
+        self._path = None
+        self._queryset = None
         self._patterns = []
         self._data = {}
 
     def handle(self):
+        self._prepare_path()
+        self._get_queryset()
         self._get_faces_data_from_redis()
         self._relate_faces_data()
         self._find_central_faces_of_patterns()
         self._save_patterns_data_to_redis()
         self._print_pattern_faces()
         self._save_album_report()
+
+    def _get_queryset(self):
+        if self._queryset is None:
+            self._queryset = Photos.objects.filter(album__pk=self._album_pk, is_private=False)
 
     def _get_faces_data_from_redis(self):
         for photo in self._queryset:
@@ -165,10 +176,11 @@ class RelateFacesHandler(BaseHandler):
             redis_instance.expire(f"album_{self._album_pk}_pattern_{i}", REDIS_DATA_EXPIRATION_SECONDS)
 
     def _prepare_path(self):
-        path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/patterns')
-        if not os.path.exists(path):
-            os.makedirs(path)
-        return path
+        if self._path is None:
+            path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/patterns')
+            if not os.path.exists(path):
+                os.makedirs(path)
+            self._path = path
 
     def _print_pattern_faces(self):
         images = {}
@@ -204,7 +216,7 @@ class ComparingExistingAndNewPeopleHandler(BaseHandler):
 
     def handle(self):
         self._get_existing_people_data_from_db()
-        self._get_new_people_data_from_redis()
+        self._get_new_people_data_from_redis_or_create_person()
         self._connect_people_in_pairs()
         self._save_united_people_data_to_redis()
         self._save_album_report()
@@ -245,6 +257,22 @@ class ComparingExistingAndNewPeopleHandler(BaseHandler):
             if face_db_instance.pk == face_db_instance.pattern.central_face.pk:
                 pattern.central_face = face
 
+    def _get_new_people_data_from_redis_or_create_person(self):
+        if redis_instance.exists(f"album_{self._album_pk}_person_1"):
+            self._get_new_people_data_from_redis()
+        elif redis_instance.exists(f"album_{self._album_pk}_pattern_1") and\
+                not redis_instance.exists(f"album_{self._album_pk}_pattern_2"):
+            self._create_person_from_pattern_and_set_it_to_redis()
+        else:
+            photo_pk = self._get_photo_pk_with_face()
+            if photo_pk:
+                self._create_person_from_face_and_set_it_to_redis(photo_pk=photo_pk)
+                self._print_first_face()
+            else:
+                raise Exception(
+                    "No people recognised and no patterns or it is not single pattern, or there is no faces at all."
+                )
+
     def _get_new_people_data_from_redis(self):
         i = 1
         while redis_instance.exists(f"album_{self._album_pk}_person_{i}"):
@@ -279,6 +307,89 @@ class ComparingExistingAndNewPeopleHandler(BaseHandler):
 
             self._new_people.append(person)
             i += 1
+
+    def _create_person_from_pattern_and_set_it_to_redis(self):
+        # Creating person
+        person = PersonData(redis_indx=1)
+        pattern_ccentral_face_ind = int(redis_instance.hget(f"album_{self._album_pk}_pattern_1",
+                                                            "central_face")[5:])
+        for i in range(1, int(redis_instance.hget(f"album_{self._album_pk}_pattern_1", "faces_amount")) + 1):
+            face_address = redis_instance.hget(f"album_{self._album_pk}_pattern_1", f"face_{i}")
+            photo_pk, face_ind = re.search(r'photo_(\d+)_face_(\d+)', face_address).groups()
+            face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_location"))
+            face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_encoding"))
+            face = FaceData(photo_pk=int(photo_pk),
+                            index=int(face_ind),
+                            location=face_loc,
+                            encoding=face_enc)
+            if i == 1:
+                pattern = PatternData(face)
+            else:
+                pattern.add_face(face)
+
+            if i == pattern_ccentral_face_ind:
+                pattern.central_face = face
+
+        person.add_pattern(pattern)
+        self._new_people.append(person)
+
+        # Setting it to redis
+        redis_instance.hset(f"album_{self._album_pk}_person_1", "pattern_1", "1")
+        redis_instance.hset(f"album_{self._album_pk}", "people_amount", "1")
+        redis_instance.expire(f"album_{self._album_pk}_person_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    def _create_person_from_face_and_set_it_to_redis(self, photo_pk):
+        person = PersonData(redis_indx=1)
+        face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_location"))
+        face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_encoding"))
+        face = FaceData(photo_pk=int(photo_pk),
+                        index=1,
+                        location=face_loc,
+                        encoding=face_enc)
+        pattern = PatternData(face)
+        person.add_pattern(pattern)
+        self._new_people.append(person)
+
+        # Setting it to redis
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "face_1", f"photo_{photo_pk}_face_1")
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "central_face", "face_1")
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "faces_amount", "1")
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "person", "1")
+        redis_instance.hset(f"album_{self._album_pk}_person_1", "pattern_1", "1")
+        redis_instance.hset(f"album_{self._album_pk}", "people_amount", "1")
+        redis_instance.hset(f"album_{self._album_pk}", "number_of_verified_patterns", "1")
+        redis_instance.expire(f"album_{self._album_pk}_pattern_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{self._album_pk}_person_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    def _print_first_face(self):
+        face = next(iter(next(iter(self._new_people[0]))))
+
+        # Cut face image
+        image = fr.load_image_file(os.path.join(BASE_DIR, Photos.objects.get(pk=face.photo_pk).original.url[1:]))
+        top, right, bottom, left = face.location
+        face_image = image[top:bottom, left:right]
+        pil_image = Image.fromarray(face_image)
+
+        # Save face image to temp folder
+        path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/patterns', '1')
+        if not os.path.exists(path):
+            os.makedirs(path)
+        save_path = os.path.join(path, '1.jpg')
+        pil_image.save(save_path)
+
+    def _get_photo_pk_with_face(self):
+        pks = map(lambda p: p.pk, Photos.objects.filter(album__pk=self._album_pk))
+        photo_pk_with_face = None
+        for pk in pks:
+            if redis_instance.hexists(f"photo_{pk}", "face_1_location"):
+                if photo_pk_with_face is None:
+                    photo_pk_with_face = pk
+                else:
+                    raise Exception("Was founded multiple faces. Need relate them before saving.")
+
+        return photo_pk_with_face
 
     def _connect_people_in_pairs(self):
         ppl_distances = []
@@ -345,14 +456,95 @@ class SavingAlbumRecognitionDataToDBHandler(BaseHandler):
         self._set_finished_and_clear()
 
     def _get_data_from_redis(self):
+        if redis_instance.exists(f"album_{self._album_pk}_person_1"):
+            self._get_new_people_from_redis()
+        elif redis_instance.exists(f"album_{self._album_pk}_pattern_1") and\
+                not redis_instance.exists(f"album_{self._album_pk}_pattern_2"):
+            self._create_person_from_pattern_and_set_it_to_redis()
+        else:
+            photo_pk = self._get_photo_pk_with_face()
+            if photo_pk:
+                self._create_person_from_face_and_set_it_to_redis(photo_pk=photo_pk)
+            else:
+                raise Exception(
+                    "No people recognised and no patterns or it is not single pattern, or there is no faces at all."
+                )
+
+    def _get_photo_pk_with_face(self):
+        pks = map(lambda p: p.pk, Photos.objects.filter(album__pk=self._album_pk))
+        photo_pk_with_face = None
+        for pk in pks:
+            if redis_instance.hexists(f"photo_{pk}", "face_1_location"):
+                if photo_pk_with_face is None:
+                    photo_pk_with_face = pk
+                else:
+                    raise Exception("Was founded multiple faces. Need relate them before saving.")
+
+        return photo_pk_with_face
+
+    def _create_person_from_pattern_and_set_it_to_redis(self):
+        person = PersonData(redis_indx=1)
+        pattern_central_face_ind = int(redis_instance.hget(f"album_{self._album_pk}_pattern_1",
+                                                           "central_face")[5:])
+        for i in range(1, int(redis_instance.hget(f"album_{self._album_pk}_pattern_1",
+                                                  "faces_amount")) + 1):
+            face_address = redis_instance.hget(f"album_{self._album_pk}_pattern_1", f"face_{i}")
+            photo_pk, face_ind = re.search(r'photo_(\d+)_face_(\d+)', face_address).groups()
+            face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_location"))
+            face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_encoding"))
+            face = FaceData(photo_pk=int(photo_pk),
+                            index=int(face_ind),
+                            location=face_loc,
+                            encoding=face_enc)
+            if i == 1:
+                pattern = PatternData(face)
+            else:
+                pattern.add_face(face)
+
+            if i == pattern_central_face_ind:
+                pattern.central_face = face
+
+        person.add_pattern(pattern)
+        self._people.append(person)
+
+        # Setting it to redis
+        redis_instance.hset(f"album_{self._album_pk}_person_1", "patterns_1", "1")
+        redis_instance.hset(f"album_{self._album_pk}", "people_amount", "1")
+        redis_instance.expire(f"album_{self._album_pk}_person_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    def _create_person_from_face_and_set_it_to_redis(self, photo_pk):
+        person = PersonData(redis_indx=1)
+        face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_location"))
+        face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_encoding"))
+        face = FaceData(photo_pk=int(photo_pk),
+                        index=1,
+                        location=face_loc,
+                        encoding=face_enc)
+        pattern = PatternData(face)
+        person.add_pattern(pattern)
+        self._people.append(person)
+
+        # Setting it to redis
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "face_1", f"photo_{photo_pk}_face_1")
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "faces_amount", "1")
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "person", "1")
+        redis_instance.hset(f"album_{self._album_pk}_pattern_1", "central_face", "1")
+        redis_instance.hset(f"album_{self._album_pk}_person_1", "pattern_1", "1")
+        redis_instance.hset(f"album_{self._album_pk}", "people_amount", "1")
+        redis_instance.hset(f"album_{self._album_pk}", "number_of_verified_patterns", "1")
+        redis_instance.expire(f"album_{self._album_pk}_pattern_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{self._album_pk}_person_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    def _get_new_people_from_redis(self):
         i = 1
         while redis_instance.exists(f"album_{self._album_pk}_person_{i}"):
             if redis_instance.hexists(f"album_{self._album_pk}_person_{i}", "real_pair"):
                 pair_pk = int(redis_instance.hget(f"album_{self._album_pk}_person_{i}", "real_pair")[7:])
             else:
                 pair_pk = None
-            person = PersonData(redis_indx=i,
-                                pair_pk=pair_pk)
+            person = PersonData(redis_indx=i, pair_pk=pair_pk)
 
             j = 1
             while redis_instance.hexists(f"album_{self._album_pk}_person_{i}", f"pattern_{j}"):
@@ -511,7 +703,7 @@ class SavingAlbumRecognitionDataToDBHandler(BaseHandler):
 
     def _set_correct_status(self):
         redis_instance.hset(f"album_{self._album_pk}", "current_stage", 9)
-        redis_instance.hset(f"album_{self._album_pk}", "status", "complete")
+        redis_instance.hset(f"album_{self._album_pk}", "status", "completed")
         redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
     def _set_finished_and_clear(self):
