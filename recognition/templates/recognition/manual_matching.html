@@ -1,46 +1,64 @@
 {% extends 'recognition/base/manual_handling_base.html' %}
 
+{% block non_field_errors %}
+{% if form.non_field_errors %}
+<div class="alert alert-danger" role="alert">
+{% for error in form.non_field_errors %}
+    <p>{{ error }}</p>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}
+
 {% block fields %}
-<div class="card">
-    <div class="row">
-        {% for choice in form.new_ppl %}
-        <div class="col-4 col-md-3 col-xxl-2">
-            <div class="row align-items-center">
-                <div class="col-12">
-                    <img src="{{ choice.choice_label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
-                </div>
-                <div class="col-12">
-                    {{ choice.tag }}
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-</div>
-<div class="card">
-    <div class="row">
-        {% for choice in form.old_ppl %}
-        <div class="col-4 col-md-3 col-xxl-2">
-            <div class="row align-items-center">
-                <div class="col-12">
-                    <img src="{{ choice.choice_label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
-                </div>
-                <div class="col-12">
-                    {{ choice.tag }}
+<div class="col-12">
+    <div class="card py-2 my-3 border-3">
+        <div class="row">
+            {% for choice in form.new_ppl %}
+            <div class="col-4 col-md-3 col-xxl-2 my-2">
+                <div class="row align-items-center">
+                    <div class="col-12">
+                        <img src="{{ choice.choice_label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                    </div>
+                    <div class="col-12">
+                        {{ choice.tag }}
+                    </div>
                 </div>
             </div>
+            {% endfor %}
         </div>
-        {% endfor %}
     </div>
 </div>
-<div class="form-check mt-5">
-    {{ form.done }}
-    <label class="form-check-label" for="{{ form.done.id_for_label }}">{{ form.done.label }}:</label>
+<div class="col-12">
+    <div class="card py-2 my-3 border-3">
+        <div class="row">
+            {% for choice in form.old_ppl %}
+            <div class="col-4 col-md-3 col-xxl-2 my-2">
+                <div class="row align-items-center">
+                    <div class="col-12">
+                        <img src="{{ choice.choice_label }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                    </div>
+                    <div class="col-12">
+                        {{ choice.tag }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+<div class="col-12">
+    <div class="mt-4 d-flex justify-content-center">
+        <div class="form-check d-flex align-items-center">
+            {{ form.done }}
+            <label class="form-check-label h5" for="{{ form.done.id_for_label }}">{{ form.done.label }}</label>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
 {% block submit_button %}
-<div class="row mt-5">
+<div class="row my-4">
     <div class="col-12">
         <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>
     </div>

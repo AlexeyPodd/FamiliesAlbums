@@ -180,14 +180,16 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
 
         status = redis_instance.hget(f"album_{self.object.pk}", "status")
         if status == "processing":
+            progress = 10
             is_ready = False
             instructions = [
-                "We are searching for faces on photos of this album. This may take some time.",
+                "We are searching for faces on photos of this album.",
+                " This may take a minute or two.",
                 "Please refresh this page until you see that all the photos have been processed.",
-                "We will need you to do some verification of the result.",
             ]
             title = f'Album \"{self.object}\" - waiting'
         else:
+            progress = 20
             is_ready = True
             instructions = [
                 "We are ready to continue. You can press the button!",
@@ -198,8 +200,7 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
 
         context.update({
             'heading': "Searching for faces on album's photos",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
+            'progress': progress,
             'instructions': instructions,
             'is_ready': is_ready,
             'title': title,
@@ -372,10 +373,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, RecognitionMixin, Det
 
         current_photo_number = int(redis_instance.hget(f"album_{self.album.pk}", "number_of_processed_photos")) + 1
         photos_with_faces = redis_instance.llen(f"album_{self.album.pk}_photos")
-        instructions = [
-            "Please mark the faces of children under 10 and objects that are not faces.",
-            "They will be removed.",
-        ]
+        instructions = ["Please mark the faces of children under 10 and objects that are not faces."]
         if self.object.slug == redis_instance.lindex(f"album_{self.album.pk}_photos", -1):
             button_label = "Next stage"
         else:
@@ -385,8 +383,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, RecognitionMixin, Det
             'title': f'Album \"{self.album}\" - verifying frames',
             'heading': f"Verifying photo {self.object.title} ({current_photo_number}/{photos_with_faces})",
             'instructions': instructions,
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
+            'progress': 20 + 10 * current_photo_number // photos_with_faces,
             'button_label': button_label,
         })
 
@@ -443,6 +440,7 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, DetailView):
         if self.status == "processing":
             title = f'Album \"{self.object}\" - waiting'
             is_ready = False
+            progress = 30
             instructions = [
                 "Now verified faces are combined into patterns.",
                 "This should take no more than a moment.",
@@ -452,17 +450,14 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, DetailView):
         else:
             title = f'Album \"{self.object}\" - ready to continue'
             is_ready = True
-            instructions = [
-                "Patterns of faces has created, we are ready to continue.",
-                "You can press the button!",
-            ]
+            progress = 40
+            instructions = ["Patterns of faces has created, we are ready to continue."]
 
         context.update({
             'title': title,
             'is_ready': is_ready,
+            'progress': progress,
             'heading': "Recognizing faces. Creating patterns.",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
             'instructions': instructions,
             'button_label': "Verify results",
             'next': 'verify_patterns',
@@ -551,9 +546,11 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, DetailView):
             'title': f'Album \"{self.object}\" - verifying patterns',
             'formset': self.formset,
             'heading': "Verifying patterns of people's faces.",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
-            'instructions': ["Please mark odd faces, that do not fit the majority in each row."],
+            'progress': 40,
+            'instructions': [
+                "In each row, there should be faces belonging to one person.",
+                "Please mark mismatched ones.",
+            ],
             'button_label': "Confirm",
         })
 
@@ -762,9 +759,11 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, DetailView):
         context.update({
             'title': f'Album \"{self.object}\" - verifying patterns',
             'heading': "Group patterns of people.",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
-            'instructions': ["Please mark faces belonging to the one same person."],
+            'progress': 50,
+            'instructions': [
+                "Please mark all faces belonging to the one same person.",
+                "If these are all faces of different people, do not mark any.",
+            ],
             'button_label': "Confirm",
         })
 
@@ -894,6 +893,7 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, DetailView):
         if self.status == "processing":
             title = f'Album \"{self.object}\" - waiting'
             is_ready = False
+            progress = 60
             instructions = [
                 "Now the people found in the photos of this album are searched in your other processed albums.",
                 "This should take no more than a moment.",
@@ -905,6 +905,7 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, DetailView):
         else:
             title = f'Album \"{self.object}\" - ready to continue'
             is_ready = True
+            progress = 70
             if self._any_tech_matches:
                 instructions = [
                     "Some matches are found.",
@@ -924,8 +925,7 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, DetailView):
             'title': title,
             'is_ready': is_ready,
             'heading': "Looking for people matches in your other processed albums",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
+            'progress': progress,
             'instructions': instructions,
             'button_label': button_label,
             'next': next,
@@ -1034,8 +1034,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, DetailView):
         context.update({
             'title': f'Album \"{self.object}\" - verifying matches',
             'heading': "Verify automatic matching.",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
+            'progress': 70,
             'instructions': ["Please mark pairs, that are depicting DIFFERENT people."],
             'button_label': "Confirm",
             'new_ppl_urls': new_ppl_urls,
@@ -1161,11 +1160,10 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, DetailView):
         context.update({
             'title': f'Album \"{self.object}\" - manual matching',
             'heading': "Manually matching same person faces.",
-            'current_stage': self.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
+            'progress': 80,
             'instructions': ["Please mark pair of faces that belongs to same person.",
-                             "If there is no matching faces - check the box \"Here is no"
-                             " matches\", and press \"Confirm\""],
+                             "If there is no matching faces don't mark any.",
+                             "Or check the box \"Here is no matches\", and press \"Confirm\""],
             'button_label': "Confirm",
         })
 
@@ -1335,10 +1333,11 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
         if self.status == "processing":
             title = f'Album \"{self.object}\" - waiting'
             is_ready = False
+            progress = 90
             instructions = [
                 "Saving recognised people data to Data Base",
                 "Once this is completed, you can search for people in other users' photos and they in yours."
-                "This should take no more than a moment.",
+                "This may take a minute or two.",
                 "Please refresh the page.",
             ]
             button_label = 'waiting'
@@ -1347,6 +1346,7 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
         else:
             title = f'Album \"{self.object}\" - recognition done'
             is_ready = True
+            progress = 100
             instructions = [
                 "Data is successfully saved.",
                 "Now you can search for people in your photos in other users' photos!",
@@ -1358,8 +1358,7 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
             'title': title,
             'is_ready': is_ready,
             'heading': "Saving all data to Data Base",
-            'current_stage': self.recognition_stage,
-            'total_stages': self.recognition_stage,
+            'progress': progress,
             'instructions': instructions,
             'button_label': button_label,
             'next': next,
@@ -1415,8 +1414,7 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
 
         context.update({
             'is_ready': True,
-            'current_stage': AlbumRecognitionDataSavingWaitingView.recognition_stage,
-            'total_stages': AlbumRecognitionDataSavingWaitingView.recognition_stage,
+            'progress': 100,
             'heading': "No Faces founded",
             'instructions': instructions,
             'title': title,

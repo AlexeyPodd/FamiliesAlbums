@@ -62,7 +62,7 @@ class VarifyMatchesForm(forms.Form):
         for new_people_ind, old_people_pk, *_ in match_imgs_urls:
             self.fields[f'pair_{new_people_ind}_{old_people_pk}'] = forms.BooleanField(
                 widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
-                                                  'style': 'width: 25px; height: 25px;'}),
+                                                  'style': 'width: 35px; height: 35px;'}),
                 label=f'new{new_people_ind}_old{old_people_pk}',
                 required=False,
             )
@@ -70,7 +70,7 @@ class VarifyMatchesForm(forms.Form):
 
 class ManualMatchingForm(forms.Form):
     done = forms.BooleanField(
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input m-2',
                                           'style': 'width: 25px; height: 25px;'}),
         label="Here is no matches",
         required=False,

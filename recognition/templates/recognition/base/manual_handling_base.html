@@ -6,7 +6,9 @@
     {% block heading %}
     <div class="row my-3">
         <div class="col-12">
-            <p class="h3">Stage {{ current_stage }}/{{ total_stages }}</p>
+            <div class="progress mb-3" style="height: 25px;">
+                <div class="progress-bar progress-bar-striped" role="progressbar" aria-label="Recognition Progress" style="width: {{ progress }}%" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
             <h2>{{ heading }}</h2>
             {% for instruction in instructions %}
             <p class="h5">{{ instruction }}</p>
@@ -34,7 +36,7 @@
         </div>
 
         {% block submit_button %}
-        <div class="row mt-5">
+        <div class="row my-4">
             <div class="col-12">
                 <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>
             </div>

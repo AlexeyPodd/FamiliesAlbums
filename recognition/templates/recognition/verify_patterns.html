@@ -10,13 +10,9 @@
     <div class="card py-2 my-3{% if form.non_field_errors %} border-danger{% endif %}">
         {{ form.id }}
 
-        {% if form.non_field_errors %}
-        <div class="text-danger text-center">
-            {% for error in form.non_field_errors %}
-            <p>{{ error }}</p>
-            {% endfor %}
-        </div>
-        {% endif %}
+        {% block non_field_errors %}
+        {{ block.super }}
+        {% endblock %}
 
         <div class="row">
             {% for field in form %}

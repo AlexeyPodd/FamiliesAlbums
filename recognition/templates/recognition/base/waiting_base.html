@@ -7,14 +7,16 @@
     {% block heading %}
     <div class="row my-3">
         <div class="col-12">
-            <p class="h3">Stage {{ current_stage }}/{{ total_stages }}</p>
+            <div class="progress mb-3" style="height: 25px;">
+                <div class="progress-bar{% if progress != 100 %} progress-bar-striped{% else %} bg-success{% endif %}{% if not is_ready %} progress-bar-animated{% endif %}" role="progressbar" aria-label="Recognition Progress" style="width: {{ progress }}%" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
             <h2>{{ heading }}</h2>
         </div>
     </div>
     {% endblock %}
 
     {% block info_card %}
-    <div class="card p-4 text-center flex-grow-1">
+    <div class="card p-4 mb-3 text-center flex-grow-1">
         <div class="col-12">
             <img src="{% if album.miniature %}{{ album.miniature.original.url }}{% else %}{% static 'images/main.ico' %}{% endif %}" alt="" style="width: 100%; height: auto; max-height: 550px; object-fit: contain;">
         </div>
