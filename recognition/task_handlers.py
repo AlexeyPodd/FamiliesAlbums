@@ -13,7 +13,7 @@ from photoalbums.settings import BASE_DIR, REDIS_DATA_EXPIRATION_SECONDS, \
 from .data_classes import FaceData, PatternData, PersonData
 from .models import Faces, Patterns, People
 from .utils import set_album_photos_processed, redis_instance, redis_instance_raw
-from .support_classes import DataDeletionSupporter, ManageClustersSupporter
+from .supporters import DataDeletionSupporter, ManageClustersSupporter
 
 
 class BaseHandler:

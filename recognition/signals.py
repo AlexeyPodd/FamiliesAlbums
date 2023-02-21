@@ -2,7 +2,7 @@ from django.db.models.signals import post_delete
 from django.dispatch import receiver
 
 from .models import Faces, Patterns, People
-from .support_classes import ManageClustersSupporter
+from .supporters import ManageClustersSupporter
 from .utils import recalculate_pattern_center
 
 

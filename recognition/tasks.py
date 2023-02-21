@@ -1,7 +1,7 @@
 from celery.utils.log import get_task_logger
 from celery import shared_task
 
-from .photos_handlers import FaceSearchingHandler, RelateFacesHandler, ComparingExistingAndNewPeopleHandler, \
+from .task_handlers import FaceSearchingHandler, RelateFacesHandler, ComparingExistingAndNewPeopleHandler, \
     SavingAlbumRecognitionDataToDBHandler, ClearTempDataHandler
 
 logger = get_task_logger(__name__)

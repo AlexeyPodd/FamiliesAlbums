@@ -33,6 +33,28 @@ them manually.
 9. **Saving new faces datas to Data Base** *(task)* Saved patterns are storing in clusters, those are forming fractal
 tree.
 
+#### Skips of stages:
+1. 1 -> no_faces *(no faces found)*
+2. 2 -> no_faces *(no faces verified)*
+3. 2 -> 6 *(1 face verified and saved faces exists)*
+4. 2 -> 9 *(1 face verified and no saved faces exists)*
+5. 3 -> 4 -> 5 *(every pattern has one face)*
+6. 4 -> 6 *(1 pattern formed and saved faces exists)*
+7. 4 -> 9 *(1 pattern formed and no saved faces exists)*
+8. 5 -> 9 *(no saved faces exists)*
+9. 6 -> 8 *(no tech paired created and saved people)*
+10. 7 -> 9 *(no not paired created or saved people)*
+
+#### Recognised faces data storing in Data Base
+&nbsp;&nbsp;&nbsp;&nbsp;Each face entry contains link to photo, location in photo and encoding.   
+&nbsp;&nbsp;&nbsp;&nbsp;Each pattern entry contains faces, that belong to the same person and were identified 
+by the program as belonging to the same person.   
+&nbsp;&nbsp;&nbsp;&nbsp;Each person entry contains group of patterns, and link to user, in whose photos were found 
+faces of its patterns.
+
+&nbsp;&nbsp;&nbsp;&nbsp;Also for faster search of similar people,
+patterns are united into clusters by the principle of similarity.
+
 #### Fractal tree clusters storing of patterns
 The following structure has been developed specifically for the convenience of finding the most similar patterns.
 Initially, there is an empty root cluster. Patterns are added to it as users' albums are processed. Once the cluster
@@ -45,25 +67,25 @@ limit is reached, the following happens:
 6. be created in it.
 
 #### Redis temporary data storing
-Album processing needs to store data between process stages somewhere. For this purpose is performed by redis.
+Album processing needs to store data between process stages somewhere. This purpose is performed by redis.
 Redis stores the following keys:
 1. album_{pk}: dict
-   1. current_stage: int: range(1, 10)
-   2. status: processing / completed
-   3. number_of_processed_photos: int
-   4. number_of_verified_patterns: int
-   5. people_amount: int
+   - current_stage: int: range(1, 10)
+   - status: processing / completed
+   - number_of_processed_photos: int
+   - number_of_verified_patterns: int
+   - people_amount: int
 2. photo_{pk}: dict: (i >= 1)
-   1. face_{i}_location: byte.tuple
-   2. face_{i}_encoding: byte.numpy_array
-   3. faces_amount: int
+   - face_{i}_location: byte.tuple
+   - face_{i}_encoding: byte.numpy_array
+   - faces_amount: int
 3. album_{pk}_photos: list: slugs
 4. album_{pk}\_pattern\_{i}: dict (i >= 1, j >= 1, k >= 1)
-   1. face_{j}: photo_{pk}\_face\_{k}
-   2. faces_amount: int
-   3. person: int
+   - face_{j}: photo_{pk}\_face\_{k}
+   - faces_amount: int
+   - person: int
 5. album_{pk}\_person\_{i}: dict (i >= 1, j >= 1, k >= 1)
-   1. pattern_{j}: int (link to p.4)
-   2. tech_pair: person_{pk}
-   3. real_pair: person_{pk}
+   - pattern_{j}: int (link to p.4)
+   - tech_pair: person_{pk}
+   - real_pair: person_{pk}
 6. album_{pk}_finished: no_faces / 1
