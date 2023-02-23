@@ -7,6 +7,7 @@
 
     <div class="container-xxl">
         <div class="row d-flex justify-content-center">
+            {% if photos %}
             {% for photo in photos %}
             <div class="col-6 col-md-4 col-xl-3 d-flex align-items-stretch my-4">
                 <div class="card w-100 border-0" id="{{ photo.slug }}">
@@ -49,6 +50,12 @@
                 </div>
             </div>
             {% endfor %}
+            {% else %}
+                <div class="card m-5 text-center">
+                    <p class="display-2 text-secondary">You have no liked photos</p>
+                    <p class="display-5 text-secondary">After you click "Add to Favorites" on another user's photo, it will appear here</p>
+                </div>
+            {% endif %}
         </div>
     </div>
 

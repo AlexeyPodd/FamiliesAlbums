@@ -5,7 +5,7 @@ from .views import *
 urlpatterns = [
     path('photo_with_framed_faces/<slug:photo_slug>', return_photo_with_framed_faces, name='photo_with_framed_faces'),
     path('face_img/<slug:face_slug>/', return_face_image_view, name='get_face_img'),
-    path('my_albums/', AlbumsRecognitionView.as_view(), name='recognition_main'),
+    path('my_albums/', AlbumsRecognitionView.as_view(), name='recognition_albums'),
     path('process_album/<slug:album_slug>/', AlbumProcessingConfirmView.as_view(), name='processing_album_confirm'),
     path('process_album/<slug:album_slug>/find_faces/', find_faces_view, name='find_faces'),
     path('process_album/<slug:album_slug>/frames_waiting/', AlbumFramesWaitingView.as_view(), name='frames_waiting'),
@@ -24,4 +24,7 @@ urlpatterns = [
     path('process_album/<slug:album_slug>/save_waiting/',
          AlbumRecognitionDataSavingWaitingView.as_view(), name='save_waiting'),
     path('process_album/<slug:album_slug>/no_faces/', NoFacesAlbumView.as_view(), name='no_faces'),
+    path('recognized_people/', RecognizedPeopleView.as_view(), name='recognition_main'),
+    path('person/<slug:person_slug>/', RecognizedPersonView.as_view(), name='person'),
+    path('people_search/', SearchPeopleView.as_view(), name='search_people'),
 ]

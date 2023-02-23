@@ -3,8 +3,9 @@
 
 {% block content %}
 <div class="container-xxl">
-    <div class="row">
-
+    <div class="row text-center">
+        {% if albums %}
+        <h3 class="h1 m-4">{{ heading }}</h3>
         {% for album in albums %}
         <div class="col-md-6 col-xl-4 p-4 d-flex align-items-stretch">
             <div class="card p-3 w-100" style="{% if album.is_private %}background-color: rgba(0, 0, 0, 0.18); border: 8px solid #444444; {% else %}border: 8px solid {% if album.public_photos == album.processed_photos %}{% if album.public_photos > 0 %}rgba(56, 245, 30, 0.35){% else %}rgba(0, 0, 0, 0.35){% endif %}{% elif album.processed_photos == 0 %}rgba(190, 53, 53, 0.35){% else %}rgba(190, 190, 53, 0.35){% endif %}; {% endif %}border-radius: 4%">
@@ -33,6 +34,15 @@
             </div>
         </div>
         {% endfor %}
+        {% else %}
+        <div class="card m-5 text-center">
+            <p class="display-2 text-secondary">You have no albums</p>
+            <p class="display-5 text-secondary">Create album and upload some photos first</p>
+        </div>
+        <div class="p-3 row d-flex justify-content-center">
+        <a href="{% url 'album_create' request.user.username_slug %}" class="btn btn-primary btn-lg col-9 col-md-6 col-xl-4">Create new album</a>
+    </div>
+        {% endif %}
     </div>
 </div>
 

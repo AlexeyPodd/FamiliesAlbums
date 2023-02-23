@@ -1,0 +1,43 @@
+{% extends 'mainapp/base/base.html' %}
+{% load static %}
+
+{% block breadcrumbs %}
+{% include 'recognition/base/breadcrumbs.html' %}
+{% endblock breadcrumbs %}
+
+{% block content %}
+<div class="container-xxl">
+    <div class="card w-100 my-3 p-4">
+        <div class="row">
+            <div class="col-12 col-md-4">
+                <img src="{% url 'get_face_img' face_slug=person.patterns_set.first.faces_set.first.slug %}" alt="" style="width: 100%; height: auto; max-height: 300px; object-fit: contain;">
+            </div>
+            <div class="col-12 col-md-8 p-5">
+                <h3 class="h1 mb-4">Person {{ person.name }}</h3>
+                <p class="card-text h5">Founded in {{ person.photos_amount }} photo{% if person.photos_amount > 1 %}s{% endif %} of {{ person.albums_amount }} album{% if person.albums_amount > 1 %}s{% endif %}</p>
+                <p class="card-text h5">Formed {{ patterns.count }} pattern{% if patterns.count > 1 %}s{% endif %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="row">
+        {% for pattern in patterns %}
+        <div class="col-12">
+            <div class="card p-2">
+                <div class="row">
+                    {% for face in pattern.faces_set.all %}
+                    <div class="col-6 col-md-4 col-lg-3 col-xl-2 text-center">
+                        <img src="{% url 'get_face_img' face_slug=face.slug %}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                        <small class="card-text">Album: <a href="{% url 'album' username_slug=person.owner.username_slug album_slug=face.photo.album.slug %}">{{ face.photo.album.title|truncatechars:15 }}</a></small><br>
+                        <small class="card-text">Photo: <a href="{% url 'photo' username_slug=person.owner.username_slug album_slug=face.photo.album.slug photo_slug=face.photo.slug %}">{{ face.photo.title|truncatechars:15 }}</a></small>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!--Pagination-->
+{% include 'mainapp/base/album_pagination.html' %}
+{% endblock %}

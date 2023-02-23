@@ -591,7 +591,8 @@ class SavingAlbumRecognitionDataToDBHandler(BaseHandler):
                 self._update_person_instance(person, album)
 
     def _create_person_instance(self, person_data, album):
-        person_instance = People(owner=album.owner, name=album.title)
+        person_instance = People(owner=album.owner,
+                                 name=f"{album.title[:20]}__{person_data.redis_indx}__{album.owner.username[:10]}")
         person_instance.save()
 
         patterns_instances = []

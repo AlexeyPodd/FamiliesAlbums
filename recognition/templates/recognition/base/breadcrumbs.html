@@ -1,0 +1,24 @@
+<div class="bg-secondary">
+    <div class="container-xxl pb-1">
+        {% with person.owner.username_slug as owner_slug %}
+        {% if person and owner_slug != request.user.username_slug %}
+        >
+        <a href="{% url 'user_profile' owner_slug %}">
+            <small>{{ person.owner.username }}</small>
+        </a>
+        {% else %}
+        >
+        <a href="{% url 'recognition_main' %}">
+            <small>Recognized people</small>
+        </a>
+        {% endif %}
+
+        {% if person %}
+        >
+        <a href="{% url 'person' person_slug=person.slug %}">
+            <small>{{ person.name }}</small>
+        </a>
+        {% endif %}
+        {% endwith %}
+    </div>
+</div>

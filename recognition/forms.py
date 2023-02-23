@@ -1,4 +1,7 @@
 from django import forms
+from django.forms import modelformset_factory
+
+from recognition.models import People
 
 
 class VerifyFramesForm(forms.Form):
@@ -103,3 +106,10 @@ class ManualMatchingForm(forms.Form):
 
         if not done and (new_person_picked and not old_person_picked or not new_person_picked and old_person_picked):
             self.add_error(None, "Only one person was picked. You should chose pair, or mark \"Here is no matches\".")
+
+
+RenamePeopleFormset = modelformset_factory(
+    People,
+    fields=('name',),
+    widgets={'name': forms.TextInput(attrs={'class': 'form-control'})}
+)

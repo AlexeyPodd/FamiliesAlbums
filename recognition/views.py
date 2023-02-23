@@ -8,21 +8,22 @@ from django.urls import reverse_lazy, reverse
 from django.views.decorators.csrf import csrf_protect
 from django.views.generic import ListView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Count, Q
-from django.views.generic.edit import FormMixin
+from django.db.models import Count, Q, Prefetch
+from django.views.generic.edit import FormMixin, FormView
 
 from PIL import Image, ImageDraw, ImageFont
 
 from mainapp.models import Photos, Albums
 from .forms import *
-from .models import Faces, People
-from .supporters import RedisSupporter, DataDeletionSupporter
+from .models import Faces, People, Patterns
+from .supporters import RedisSupporter
 from .tasks import recognition_task
 from photoalbums.settings import MEDIA_ROOT, BASE_DIR
 from .utils import set_album_photos_processed
 from .mixin_views import RecognitionMixin
 
 
+@login_required
 def return_face_image_view(request, face_slug):
     face = Faces.objects.select_related('photo').get(slug=face_slug)
     if not request.user.is_authenticated or face.photo.is_private:
@@ -35,6 +36,7 @@ def return_face_image_view(request, face_slug):
     return response
 
 
+@login_required
 def return_photo_with_framed_faces(request, photo_slug):
     photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
 
@@ -65,7 +67,7 @@ class AlbumsRecognitionView(LoginRequiredMixin, ListView):
     template_name = 'recognition/albums.html'
     context_object_name = 'albums'
     extra_context = {'title': 'Recognition - Albums',
-                     }
+                     'heading': 'Process your albums for recognition'}
     paginate_by = 12
 
     def get_queryset(self):
@@ -959,6 +961,8 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
         self._get_object_and_make_checks(waiting_task=True)
 
         self._status = RedisSupporter.get_status_or_completed(self.object.pk)
+        if self._status == 'completed':
+            return redirect('rename_people', album_slug=self.object.slug)
 
         return super().get(request, *args, **kwargs)
 
@@ -1012,6 +1016,70 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
         return context
 
 
+class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
+    template_name = 'recognition/rename_people.html'
+    model = Albums
+    slug_url_kwarg = 'album_slug'
+    context_object_name = 'album'
+
+    def get(self, request, *args, **kwargs):
+        self._get_object_and_make_checks()
+
+        self.formset = self._get_formset()
+
+        return super().get(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        self._get_object_and_make_checks()
+
+        form = self.get_form()
+        self.formset = self._get_formset()
+        if self.formset.is_valid():
+            return self.form_valid(form)
+        else:
+            return self.form_invalid(form)
+
+    def _check_recognition_stage(self, waiting_task):
+        if RedisSupporter.get_stage(self.object.pk) or RedisSupporter.get_finished_status(self.object.pk) != '1':
+            raise Http404
+
+    def _get_formset(self):
+        faces = Faces.objects.filter(photo__album__pk=self.object.pk).select_related('pattern__person')
+        people_pks = set(map(lambda f: f.pattern.person.pk, faces))
+        if self.request.method == 'GET':
+            return RenamePeopleFormset(queryset=People.objects.filter(pk__in=people_pks))
+        elif self.request.method == 'POST':
+            return RenamePeopleFormset(self.request.POST, queryset=People.objects.filter(pk__in=people_pks))
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        instructions = [
+            "This is all people we found in album."
+            "They will be saved under these names.",
+            "You will NOT be able to rename them without repeating this procedure later.",
+        ]
+        title = f'Album \"{self.object}\" - naming people'
+
+        context.update({
+            'is_ready': True,
+            'progress': 100,
+            'heading': "Rename people, if you want",
+            'instructions': instructions,
+            'title': title,
+            'button_label': "Finish recognition",
+        })
+
+        return context
+
+    def form_valid(self, form):
+        self.formset.save()
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse_lazy('recognition_main')
+
+
 class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
     model = Albums
     context_object_name = 'album'
@@ -1056,3 +1124,58 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
         })
 
         return context
+
+
+class RecognizedPeopleView(LoginRequiredMixin, ListView):
+    model = People
+    template_name = 'recognition/people.html'
+    context_object_name = 'people'
+    extra_context = {'title': 'Recognition - Albums',
+                     'current_section': 'recognition_main'}
+    paginate_by = 24
+
+    def get_queryset(self):
+        queryset = self.model.objects.select_related(
+            'owner',
+        ).prefetch_related(
+            'patterns_set__faces_set',
+        ).filter(owner__pk=self.request.user.pk)
+        return queryset
+
+
+class RecognizedPersonView(LoginRequiredMixin, ListView):
+    model = Patterns
+    template_name = 'recognition/person.html'
+    context_object_name = 'patterns'
+
+    def get_queryset(self):
+        queryset = self.model.objects.prefetch_related(
+            Prefetch('faces_set',
+                     queryset=Faces.objects.filter(
+                         pattern__person__owner__pk=self.request.user.pk
+                     ).select_related('photo__album'))
+        ).filter(person__slug=self.kwargs['person_slug'])
+
+        return queryset
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        context = super().get_context_data(**kwargs)
+        person = self._get_person()
+
+        context.update({
+            'title': f'Recognition - person {person.name}',
+            'person': person,
+        })
+
+        return context
+
+    def _get_person(self):
+        person = People.objects.annotate(
+            photos_amount=Count('patterns__faces__photo', distinct=True),
+            albums_amount=Count('patterns__faces__photo__album', distinct=True),
+        ).get(slug=self.kwargs['person_slug'])
+        return person
+
+
+class SearchPeopleView(LoginRequiredMixin, ListView):
+    pass
