@@ -1,0 +1,45 @@
+{% extends 'recognition/base/manual_handling_base.html' %}
+{% load recognition_tags %}
+
+{% block form_area %}
+<form action="" method="post" id="faces_of_pattern_form">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    {{ formset.non_form_errors }}
+    <div class="row">
+        {% for form in formset %}
+        <div class="col-6 col-md-4 col-lg-3">
+            <div class="card p-2 my-3{% if form.errors %} border-danger{% endif %}">
+                {{ form.id }}
+
+                {% block non_field_errors %}
+                {{ block.super }}
+                {% endblock %}
+
+                <div class="row align-items-center">
+                    {% if field.errors %}
+                    <div class="invalid-feedback">
+                        {% for err in field.errors %}
+                        <p>{{ err }}</p>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="col-12 my-2">
+                        <img src="{% url 'get_face_img' face_slug=faces_slugs|lookup:forloop.counter0 %}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                    </div>
+                    <div class="col-12">
+                        {{ form.name }}
+                    </div>
+
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% block submit_button %}
+    {{ block.super }}
+    {% endblock %}
+
+</form>
+{% endblock %}

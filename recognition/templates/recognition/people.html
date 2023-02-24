@@ -7,7 +7,6 @@
 
 {% block content %}
 <div class="container-xxl">
-    <div class="row">
         {% if not people %}
         <div class="card m-5 text-center">
             <p class="display-2 text-secondary">You have no recognized people</p>
@@ -22,20 +21,16 @@
         {% if people %}
         <div class="row">
             {% for person in people %}
-            <div class="col-6 col-md-3 col-xl-2 text-center mb-3">
-                <div class="card card-photo p-2">
+            <div class="col-6 col-md-3 col-xl-2 text-center mb-3 d-flex align-items-stretch">
+                <div class="card card-photo p-2 w-100">
                     <img src="{% url 'get_face_img' face_slug=person.patterns_set.first.faces_set.first.slug %}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
-                    <p class="card-title">{{ person.name|truncatechars:25 }}</p>
+                    <p class="card-title mt-auto">{{ person.name|truncatechars:25 }}</p>
                     <a href="{% url 'person' person_slug=person.slug %}" class="stretched-link"></a>
                 </div>
-                <a href="{% url 'search_people' %}?person={{person.slug}}" class="btn btn-primary m-1">
-                    Search
-                </a>
             </div>
             {% endfor %}
         </div>
         {% endif %}
-    </div>
 </div>
 
 <!--Pagination-->

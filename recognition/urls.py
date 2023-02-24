@@ -24,6 +24,7 @@ urlpatterns = [
     path('process_album/<slug:album_slug>/save_waiting/',
          AlbumRecognitionDataSavingWaitingView.as_view(), name='save_waiting'),
     path('process_album/<slug:album_slug>/no_faces/', NoFacesAlbumView.as_view(), name='no_faces'),
+    path('process_album/<slug:album_slug>/rename_people/', RenameAlbumsPeopleView.as_view(), name='rename_people'),
     path('recognized_people/', RecognizedPeopleView.as_view(), name='recognition_main'),
     path('person/<slug:person_slug>/', RecognizedPersonView.as_view(), name='person'),
     path('people_search/', SearchPeopleView.as_view(), name='search_people'),

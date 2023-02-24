@@ -7,15 +7,64 @@
 
 {% block content %}
 <div class="container-xxl">
-    <div class="card w-100 my-3 p-4">
+    <div class="card w-100 my-3 p-5">
         <div class="row">
             <div class="col-12 col-md-4">
                 <img src="{% url 'get_face_img' face_slug=person.patterns_set.first.faces_set.first.slug %}" alt="" style="width: 100%; height: auto; max-height: 300px; object-fit: contain;">
             </div>
-            <div class="col-12 col-md-8 p-5">
-                <h3 class="h1 mb-4">Person {{ person.name }}</h3>
+            <div class="col-12 col-md-8 col-lg-4 p-4">
+                <h3 class="h1">{{ person.name }}</h3>
+
+                <!-- Button trigger modal -->
+                <button type="button" class="btn btn-primary btn-sm mb-4" data-bs-toggle="modal" data-bs-target="#renamingModal">
+                    Rename
+                </button>
+
+                <!-- Modal -->
+                <div class="modal fade" id="renamingModal" tabindex="-1" aria-labelledby="renamingModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <form action="" method="post" id="rename_person_form">
+                            {% csrf_token %}
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h4 class="modal-title fs-5" id="renamingModalLabel">Enter new name for this person</h4>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+
+                                    {% if form.non_field_errors %}
+                                    <div class="text-danger text-center">
+                                        {% for error in form.non_field_errors %}
+                                        <p>{{ error }}</p>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+
+                                    {% if form.name.errors %}
+                                    <div class="invalid-feedback">
+                                        {% for err in form.name.errors %}
+                                        <p>{{ err }}</p>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    
+                                    {{ form.name }}
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="submit" class="btn btn-primary w-25">Save</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <p class="card-text h5">Founded in {{ person.photos_amount }} photo{% if person.photos_amount > 1 %}s{% endif %} of {{ person.albums_amount }} album{% if person.albums_amount > 1 %}s{% endif %}</p>
                 <p class="card-text h5">Formed {{ patterns.count }} pattern{% if patterns.count > 1 %}s{% endif %}</p>
+                <a href="{% url 'search_people' %}?person={{person.slug}}" class="btn btn-primary btn-lg mt-5 w-100">
+                    Search in other users photos
+                </a>
+            </div>
+            <div class="col-12 col-lg-4">
             </div>
         </div>
     </div>

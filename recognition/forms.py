@@ -111,5 +111,12 @@ class ManualMatchingForm(forms.Form):
 RenamePeopleFormset = modelformset_factory(
     People,
     fields=('name',),
-    widgets={'name': forms.TextInput(attrs={'class': 'form-control'})}
+    widgets={'name': forms.TextInput(attrs={'class': 'form-control'})},
+    extra=0,
 )
+
+
+class RenamePersonForm(forms.ModelForm):
+    class Meta:
+        model = People
+        fields = ['name']
