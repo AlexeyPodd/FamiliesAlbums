@@ -3,11 +3,11 @@ from django.urls import path
 from .views import *
 
 urlpatterns = [
-    path('photo_with_framed_faces/<slug:photo_slug>', return_photo_with_framed_faces, name='photo_with_framed_faces'),
-    path('face_img/<slug:face_slug>/', return_face_image_view, name='get_face_img'),
+    path('photo_with_framed_faces/', return_photo_with_framed_faces, name='photo_with_framed_faces'),
+    path('face_img/', return_face_image_view, name='get_face_img'),
     path('my_albums/', AlbumsRecognitionView.as_view(), name='recognition_albums'),
-    path('process_album/<slug:album_slug>/', AlbumProcessingConfirmView.as_view(), name='processing_album_confirm'),
-    path('process_album/<slug:album_slug>/find_faces/', find_faces_view, name='find_faces'),
+    path('process_album/<slug:album_slug>/confirmation/', AlbumProcessingConfirmView.as_view(), name='processing_album_confirm'),
+    path('process_album/find_faces/', find_faces_view, name='find_faces'),
     path('process_album/<slug:album_slug>/frames_waiting/', AlbumFramesWaitingView.as_view(), name='frames_waiting'),
     path('process_album/<slug:album_slug>/verify_frames/<slug:photo_slug>/',
          AlbumVerifyFramesView.as_view(), name='verify_frames'),
@@ -27,5 +27,6 @@ urlpatterns = [
     path('process_album/<slug:album_slug>/rename_people/', RenameAlbumsPeopleView.as_view(), name='rename_people'),
     path('recognized_people/', RecognizedPeopleView.as_view(), name='recognition_main'),
     path('person/<slug:person_slug>/', RecognizedPersonView.as_view(), name='person'),
+    path('find_people/', find_people_view, name='find_people'),
     path('people_search/', SearchPeopleView.as_view(), name='search_people'),
 ]

@@ -69,6 +69,8 @@ limit is reached, the following happens:
 #### Redis temporary data storing
 Album processing needs to store data between process stages somewhere. This purpose is performed by redis.
 Redis stores the following keys:
+
+**Album processing**:
 1. album_{pk}: dict
    - current_stage: int: range(1, 10)
    - status: processing / completed
@@ -89,3 +91,7 @@ Redis stores the following keys:
    - tech_pair: person_{pk}
    - real_pair: person_{pk}
 6. album_{pk}_finished: no_faces / 1
+
+**Searching for similar people**:
+1. person_{pk}_processed_patterns_amount: int
+2. f"nearest_people_to_{pk}": list: int

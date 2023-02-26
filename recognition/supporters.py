@@ -405,6 +405,31 @@ class RedisSupporter:
                 redis_instance.delete(str_pattern + str(i))
                 i += 1
 
+    @staticmethod
+    def encrease_patterns_search_amount(person_pk):
+        redis_instance.incrby(f"person_{person_pk}_processed_patterns_amount")
+        redis_instance.expire(f"person_{person_pk}_processed_patterns_amount", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
+    def set_founded_similar_people(person_pk, pks):
+        redis_instance.rpush(f"nearest_people_to_{person_pk}", *pks)
+        redis_instance.delete(f"person_{person_pk}_processed_patterns_amount")
+        redis_instance.expire(f"nearest_people_to_{person_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
+    def get_founded_similar_people(person_pk):
+        return list(map(int, redis_instance.lrange(f"nearest_people_to_{person_pk}", 0, -1)))
+
+    @staticmethod
+    def get_searched_patterns_amount(person_pk):
+        return int(redis_instance.get(f"person_{person_pk}_processed_patterns_amount"))
+
+    @staticmethod
+    def prepare_to_search(person_pk):
+        redis_instance.delete(f"nearest_people_to_{person_pk}")
+        redis_instance.set(f"person_{person_pk}_processed_patterns_amount", 0)
+        redis_instance.expire(f"person_{person_pk}_processed_patterns_amount", REDIS_DATA_EXPIRATION_SECONDS)
+
 
 class ManageClustersSupporter:
     @classmethod

@@ -24,6 +24,8 @@ class Faces(models.Model):
         return f"{self.photo}__(top={self.loc_top};left={self.loc_left})"
 
     class Meta:
+        verbose_name = 'Recognized Face'
+        verbose_name_plural = 'Recognized Faces'
         ordering = ['photo', 'index']
 
 
@@ -37,6 +39,11 @@ class Patterns(models.Model):
                                         verbose_name='Central Face')
     is_registered_in_cluster = models.BooleanField(default=False, verbose_name='Is registered in cluster')
 
+    class Meta:
+        verbose_name = 'Face Pattern'
+        verbose_name_plural = 'Faces Patterns'
+        ordering = ['person', 'central_face']
+
 
 class People(models.Model):
     """Model contains different facial patterns of one person."""
@@ -47,6 +54,11 @@ class People(models.Model):
 
     def __str__(self):
         return self.name
+
+    class Meta:
+        verbose_name = 'Recognized Person'
+        verbose_name_plural = 'Recognized People'
+        ordering = ['owner', 'name']
 
 
 class Clusters(models.Model):
@@ -59,3 +71,8 @@ class Clusters(models.Model):
                                verbose_name='Central Pattern')
     not_recalc_patt_del = models.PositiveSmallIntegerField(default=0,
                                                            verbose_name='Not recalculated patterns deletions')
+
+    class Meta:
+        verbose_name = 'Fractal Cluster of Patterns'
+        verbose_name_plural = 'Fractal Clusters of Patterns'
+        ordering = ['-parent']

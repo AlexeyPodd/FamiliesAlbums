@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.generic import ListView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q, Prefetch
-from django.views.generic.edit import FormMixin, FormView
+from django.views.generic.edit import FormMixin
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -17,17 +17,25 @@ from mainapp.models import Photos, Albums
 from .forms import *
 from .models import Faces, People, Patterns
 from .supporters import RedisSupporter
-from .tasks import recognition_task, print_task
+from .tasks import recognition_task
 from photoalbums.settings import MEDIA_ROOT, BASE_DIR
 from .utils import set_album_photos_processed
 from .mixin_views import RecognitionMixin
 
 
 @login_required
-def return_face_image_view(request, face_slug):
+def return_face_image_view(request):
+    if request.method != 'GET':
+        raise Http404
+
+    face_slug = request.GET.get('face')
+    if face_slug is None:
+        raise Http404
+
     face = Faces.objects.select_related('photo').get(slug=face_slug)
     if not request.user.is_authenticated or face.photo.is_private:
         raise Http404
+
     photo_img = Image.open(os.path.join(BASE_DIR, face.photo.original.url[1:]))
     top, right, bottom, left = face.loc_top, face.loc_right, face.loc_bot, face.loc_left
     face_img = photo_img.crop((left, top, right, bottom))
@@ -37,9 +45,15 @@ def return_face_image_view(request, face_slug):
 
 
 @login_required
-def return_photo_with_framed_faces(request, photo_slug):
-    photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
+def return_photo_with_framed_faces(request):
+    if request.method != 'GET':
+        raise Http404
 
+    photo_slug = request.GET.get('photo')
+    if photo_slug is None:
+        raise Http404
+
+    photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
     if not request.user.is_authenticated or request.user.pk != photo.album.owner.pk or photo.is_private:
         raise Http404
 
@@ -115,11 +129,15 @@ class AlbumProcessingConfirmView(LoginRequiredMixin, DetailView):
             raise Http404
 
 
-@csrf_protect
 @login_required
-def find_faces_view(request, album_slug):
-    if request.method != 'POST':
+def find_faces_view(request):
+    if request.method != 'GET':
         raise Http404
+
+    album_slug = request.GET.get('album')
+    if album_slug is None:
+        raise Http404
+
     album = Albums.objects.select_related('owner').get(slug=album_slug)
 
     if request.user.username_slug != album.owner.username_slug:
@@ -760,9 +778,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, RecognitionMixi
         face_urls = [f"/media/temp_photos/album_{self.object.pk}/patterns/{x}/1.jpg" for x in patt_inds]
 
         # old people
-        old_face_urls = [reverse('get_face_img', kwargs={
-            'face_slug': People.objects.get(pk=x).patterns_set.all()[0].faces_set.all()[0].slug,
-        }) for x in old_people_pks]
+        old_face_urls = [reverse('get_face_img') + '?face=' + People.objects.get(pk=x).patterns_set.first().faces_set.first().slug for x in old_people_pks]
 
         self._matches_urls = tuple(zip(new_people_inds, old_people_pks, face_urls, old_face_urls))
 
@@ -889,8 +905,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, 
         for person in queryset:
             if person.pk not in paired:
                 old_ppl.append((person.pk,
-                                reverse('get_face_img',
-                                        kwargs={'face_slug': person.patterns_set.all()[0].faces_set.all()[0].slug})))
+                                reverse('get_face_img') + '?face=' + person.patterns_set.first().faces_set.first().slug))
 
         return old_ppl
 
@@ -1037,7 +1052,14 @@ class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
     def _get_people(self):
         faces = Faces.objects.filter(photo__album__pk=self.object.pk).select_related('pattern__person')
         people_pks = set(map(lambda f: f.pattern.person.pk, faces))
-        return People.objects.filter(pk__in=people_pks).prefetch_related('patterns_set__faces_set')
+        people = People.objects.filter(
+            pk__in=people_pks,
+        ).prefetch_related(
+            'patterns_set__faces_set',
+        ).annotate(
+            albums_amount=Count('patterns__faces__photo__album', distinct=True),
+        ).exclude(albums_amount__gt=1)
+        return people
 
     def _get_formset(self):
         if self.request.method == 'GET':
@@ -1049,7 +1071,7 @@ class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
         context = super().get_context_data(**kwargs)
 
         instructions = [
-            "This is all people we found in album."
+            "These are all new people that have been discovered in this album."
             "They will be saved under these names.",
         ]
         title = f'Album \"{self.object}\" - renaming people'
@@ -1128,7 +1150,8 @@ class RecognizedPeopleView(LoginRequiredMixin, ListView):
     template_name = 'recognition/people.html'
     context_object_name = 'people'
     extra_context = {'title': 'Recognition - Albums',
-                     'current_section': 'recognition_main'}
+                     'current_section': 'recognition_main',
+                     'top_heading': 'Recognized people in my photos'}
     paginate_by = 24
 
     def get_queryset(self):
@@ -1147,13 +1170,13 @@ class RecognizedPersonView(LoginRequiredMixin, FormMixin, ListView):
     form_class = RenamePersonForm
 
     def get(self, request, *args, **kwargs):
-        self.person = self._get_person()
+        self._person = self._get_person()
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
-        self.person = self._get_person()
+        self._person = self._get_person()
 
-        if request.user.pk != self.person.owner.pk:
+        if request.user.pk != self._person.owner.pk:
             raise Http404
 
         form = self.get_form()
@@ -1166,7 +1189,7 @@ class RecognizedPersonView(LoginRequiredMixin, FormMixin, ListView):
         queryset = self.model.objects.prefetch_related(
             Prefetch('faces_set',
                      queryset=Faces.objects.filter(
-                         pattern__person__owner__pk=self.request.user.pk
+                         pattern__person__pk=self._person.pk
                      ).select_related('photo__album'))
         ).filter(person__slug=self.kwargs['person_slug'])
 
@@ -1174,7 +1197,7 @@ class RecognizedPersonView(LoginRequiredMixin, FormMixin, ListView):
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs.update({'instance': self.person})
+        kwargs.update({'instance': self._person})
         return kwargs
 
     def form_valid(self, form):
@@ -1185,8 +1208,9 @@ class RecognizedPersonView(LoginRequiredMixin, FormMixin, ListView):
         context = super().get_context_data(**kwargs)
 
         context.update({
-            'title': f'Recognition - person {self.person.name}',
-            'person': self.person,
+            'title': f'Recognition - person {self._person.name}',
+            'person': self._person,
+            'button_label': "Search in other users photos",
         })
 
         return context
@@ -1199,8 +1223,86 @@ class RecognizedPersonView(LoginRequiredMixin, FormMixin, ListView):
         return person
 
     def get_success_url(self):
-        return reverse_lazy('person', kwargs={'person_slug': self.person.slug})
+        return reverse_lazy('person', kwargs={'person_slug': self._person.slug})
+
+
+@login_required
+def find_people_view(request):
+    if request.method != 'GET':
+        raise Http404
+
+    person_slug = request.GET.get('person')
+    if person_slug is None:
+        raise Http404
+
+    person = People.objects.select_related('owner').get(slug=person_slug)
+    if request.user.pk != person.owner.pk:
+        raise Http404
+
+    RedisSupporter.prepare_to_search(person.pk)
+    recognition_task.delay(person.pk, 0)
+
+    response = redirect('search_people')
+    response['Location'] += f'?person={person_slug}'
+
+    return response
 
 
 class SearchPeopleView(LoginRequiredMixin, ListView):
-    pass
+    template_name = 'recognition/search.html'
+    model = People
+    context_object_name = 'founded_people'
+
+    def get(self, request, *args, **kwargs):
+        person_slug = request.GET.get('person')
+        if person_slug is None:
+            raise Http404
+
+        self._person = People.objects.prefetch_related(
+            'patterns_set__faces_set').select_related('owner').get(slug=person_slug)
+        if request.user.pk != self._person.owner.pk:
+            raise Http404
+
+        try:
+            RedisSupporter.get_searched_patterns_amount(self._person.pk)
+        except TypeError:
+            if not RedisSupporter.get_founded_similar_people(self._person.pk):
+                raise Http404
+
+        return super().get(request, *args, **kwargs)
+
+    def get_queryset(self):
+        nearest_people_pks = RedisSupporter.get_founded_similar_people(self._person.pk)
+        queryset = People.objects.prefetch_related(
+            'patterns_set__faces_set',
+        ).select_related(
+            'owner',
+        ).filter(
+            pk__in=nearest_people_pks,
+        ).annotate(
+            photos_amount=Count('patterns__faces__photo', distinct=True),
+            albums_amount=Count('patterns__faces__photo__album', distinct=True),
+        )
+        query_list = sorted(queryset, key=lambda p: nearest_people_pks.index(p.pk))
+        return query_list
+
+    def get_context_data(self, *, object_list=None, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        total_patterns_amount = self._person.patterns_set.count()
+        try:
+            patterns_searched_amount = RedisSupporter.get_searched_patterns_amount(self._person.pk)
+        except TypeError:
+            patterns_searched_amount = total_patterns_amount
+
+        context.update({
+            'title': f'Searching similar to {self._person.name}',
+            'top_heading': "Searching person in other users' photos",
+            'heading': f"Searching {self._person.name}",
+            'progress': int(patterns_searched_amount / total_patterns_amount * 100),
+            'person': self._person,
+            'progress_label': f"{patterns_searched_amount} / {total_patterns_amount} patterns searched",
+            'founded_people_heading': "Founded people from most similar to least:",
+        })
+
+        return context

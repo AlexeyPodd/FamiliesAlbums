@@ -1,0 +1,57 @@
+{% extends 'mainapp/base/base.html' %}
+
+{% block content %}
+<div class="container-xxl text-center">
+    <h2 class="h1 m-4">{{ top_heading }}</h2>
+
+    {% if not page_obj.has_previous %}
+    <div class="card mb-4 p-4">
+        <div class="row">
+            <div class="col-12 col-md-3">
+                <img src="{% url 'get_face_img' %}?face={{ person.patterns_set.first.faces_set.first.slug }}" alt="" style="width: 100%; height: auto; max-height: 200px; object-fit: contain;">
+            </div>
+            <div class="col-12 col-md-9">
+                <h5 class="h3 mb-5">{{ heading }}</h5>
+                <div class="progress" style="height: 20px;">
+                    <div class="progress-bar{% if progress != 100 %} progress-bar-striped  progress-bar-animated{% else %} bg-success{% endif %}" role="progressbar" aria-label="Search Progress" style="width: {{ progress }}%" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                <p>{{ progress_label }}</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if founded_people %}
+    <h4 class="h1">{{ founded_people_heading }}</h4>
+    <div class="row">
+        {% for founded_person in founded_people %}
+        <div class="col-12 my-3">
+            <div class="card card-photo p-2 px-5">
+                <div class="row">
+                    <div class="col-12 col-md-3 d-flex justify-content-center align-items-center">
+                        <p class="display-1">{{ forloop.counter }}</p>
+                        <img src="{% url 'get_face_img' %}?face={{ founded_person.patterns_set.first.faces_set.first.slug }}" alt="" style="width: 100%; height: auto; max-height: 150px; object-fit: contain;">
+                    </div>
+                    <div class="col-12 col-md-9">
+                        <h6 class="card-title">{{ founded_person.name|truncatechars:35 }}</h6>
+                        <div class="row">
+                            {% for pattern in founded_person.patterns_set.all %}
+                            {% if forloop.counter0 != 0 and forloop.counter0 < 5 %}
+                            <div class="col-3">
+                                <img src="{% url 'get_face_img' %}?face={{ pattern.faces_set.first.slug }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        <p>present in {{ founded_person.photos_amount }} photo{% if founded_person.photos_amount > 1 %}s{% endif %} in {{ founded_person.albums_amount }} album{% if founded_person.albums_amount > 1 %}s{% endif %} of user {{ founded_person.owner.username|truncatechars:25 }}</p>
+                    </div>
+                </div>
+                <a href="{% url 'person' person_slug=founded_person.slug %}" class="stretched-link"></a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock content %}

@@ -6,31 +6,32 @@
 {% endblock breadcrumbs %}
 
 {% block content %}
-<div class="container-xxl">
-        {% if not people %}
-        <div class="card m-5 text-center">
-            <p class="display-2 text-secondary">You have no recognized people</p>
-            <p class="display-5 text-secondary">Process some of your albums first</p>
-        </div>
-        {% endif %}
-        <div class="p-3 row d-flex justify-content-center">
-            <a href="{% url 'recognition_albums' %}" class="btn btn-primary btn-lg col-9 col-md-6 col-xl-4">
-                Albums processing
-            </a>
-        </div>
-        {% if people %}
-        <div class="row">
-            {% for person in people %}
-            <div class="col-6 col-md-3 col-xl-2 text-center mb-3 d-flex align-items-stretch">
-                <div class="card card-photo p-2 w-100">
-                    <img src="{% url 'get_face_img' face_slug=person.patterns_set.first.faces_set.first.slug %}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
-                    <p class="card-title mt-auto">{{ person.name|truncatechars:25 }}</p>
-                    <a href="{% url 'person' person_slug=person.slug %}" class="stretched-link"></a>
-                </div>
+<div class="container-xxl text-center">
+    <h2 class="h1">{{ top_heading }}</h2>
+    {% if not people %}
+    <div class="card m-5 text-center">
+        <p class="display-2 text-secondary">You have no recognized people</p>
+        <p class="display-5 text-secondary">Process some of your albums first</p>
+    </div>
+    {% endif %}
+    <div class="p-3 row d-flex justify-content-center">
+        <a href="{% url 'recognition_albums' %}" class="btn btn-primary btn-lg col-9 col-md-6 col-xl-4">
+            Albums processing
+        </a>
+    </div>
+    {% if people %}
+    <div class="row">
+        {% for person in people %}
+        <div class="col-6 col-md-3 col-xl-2 text-center mb-3 d-flex align-items-stretch">
+            <div class="card card-photo p-2 w-100">
+                <img src="{% url 'get_face_img' %}?face={{ person.patterns_set.first.faces_set.first.slug }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                <p class="card-title mt-auto">{{ person.name|truncatechars:25 }}</p>
+                <a href="{% url 'person' person_slug=person.slug %}" class="stretched-link"></a>
             </div>
-            {% endfor %}
         </div>
-        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 
 <!--Pagination-->

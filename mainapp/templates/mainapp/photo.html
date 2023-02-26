@@ -11,7 +11,7 @@
             <div class="col-6 col-md-3 order-first" style="height: 100px;">
                 <div class="card w-100 h-100 card-button{% if previous_photo_url %} card-button-active{% endif %}" aria-label="Previous photo">
                     <div class="card-body text-center">
-                        <p class="h1">&laquo;</p>
+                        <p class="h1{% if not previous_photo_url %} text-secondary{% endif %}">&laquo;</p>
                         {% if previous_photo_url %}
                         <a href="{{ previous_photo_url }}" class="stretched-link"></a>
                         {% endif %}
@@ -57,7 +57,7 @@
             <div class="col-6 col-md-3 order-2 order-md-last" style="height: 100px;">
                 <div class="card w-100 h-100 card-button{% if next_photo_url %} card-button-active{% endif %}" aria-label="Next photo">
                     <div class="card-body text-center">
-                        <p class="h1">&raquo;</p>
+                        <p class="h1{% if not next_photo_url %} text-secondary{% endif %}">&raquo;</p>
                         {% if next_photo_url %}
                         <a href="{{ next_photo_url }}" class="stretched-link"></a>
                         {% endif %}

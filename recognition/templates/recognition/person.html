@@ -7,14 +7,17 @@
 
 {% block content %}
 <div class="container-xxl">
-    <div class="card w-100 my-3 p-5">
+
+    {% if not page_obj.has_previous %}
+    <div class="card w-100 my-4 p-5">
         <div class="row">
             <div class="col-12 col-md-4">
-                <img src="{% url 'get_face_img' face_slug=person.patterns_set.first.faces_set.first.slug %}" alt="" style="width: 100%; height: auto; max-height: 300px; object-fit: contain;">
+                <img src="{% url 'get_face_img' %}?face={{ person.patterns_set.first.faces_set.first.slug }}" alt="" style="width: 100%; height: auto; max-height: 300px; object-fit: contain;">
             </div>
             <div class="col-12 col-md-8 col-lg-4 p-4">
                 <h3 class="h1">{{ person.name }}</h3>
 
+                {% if request.user.pk == person.owner.pk %}
                 <!-- Button trigger modal -->
                 <button type="button" class="btn btn-primary btn-sm mb-4" data-bs-toggle="modal" data-bs-target="#renamingModal">
                     Rename
@@ -22,7 +25,7 @@
 
                 <!-- Modal -->
                 <div class="modal fade" id="renamingModal" tabindex="-1" aria-labelledby="renamingModalLabel" aria-hidden="true">
-                    <div class="modal-dialog">
+                    <div class="modal-dialog modal-dialog-centered">
                         <form action="" method="post" id="rename_person_form">
                             {% csrf_token %}
                             <div class="modal-content">
@@ -57,25 +60,28 @@
                         </form>
                     </div>
                 </div>
+                {% endif %}
 
                 <p class="card-text h5">Founded in {{ person.photos_amount }} photo{% if person.photos_amount > 1 %}s{% endif %} of {{ person.albums_amount }} album{% if person.albums_amount > 1 %}s{% endif %}</p>
                 <p class="card-text h5">Formed {{ patterns.count }} pattern{% if patterns.count > 1 %}s{% endif %}</p>
-                <a href="{% url 'search_people' %}?person={{person.slug}}" class="btn btn-primary btn-lg mt-5 w-100">
-                    Search in other users photos
+                <a href="{% url 'find_people' %}?person={{person.slug}}" class="btn btn-primary btn-lg mt-5 w-100">
+                    {{ button_label }}
                 </a>
             </div>
             <div class="col-12 col-lg-4">
             </div>
         </div>
     </div>
+    {% endif %}
+
     <div class="row">
         {% for pattern in patterns %}
-        <div class="col-12">
+        <div class="col-12 mb-2">
             <div class="card p-2">
                 <div class="row">
                     {% for face in pattern.faces_set.all %}
                     <div class="col-6 col-md-4 col-lg-3 col-xl-2 text-center">
-                        <img src="{% url 'get_face_img' face_slug=face.slug %}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                        <img src="{% url 'get_face_img' %}?face={{ face.slug }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
                         <small class="card-text">Album: <a href="{% url 'album' username_slug=person.owner.username_slug album_slug=face.photo.album.slug %}">{{ face.photo.album.title|truncatechars:15 }}</a></small><br>
                         <small class="card-text">Photo: <a href="{% url 'photo' username_slug=person.owner.username_slug album_slug=face.photo.album.slug photo_slug=face.photo.slug %}">{{ face.photo.title|truncatechars:15 }}</a></small>
                     </div>

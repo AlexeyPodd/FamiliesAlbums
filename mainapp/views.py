@@ -573,6 +573,7 @@ def save_photo_to_album(request):
     delete_from_favorites(request.user, photo)
 
     photo.pk, photo.id = None, None
+    photo.faces_extracted = False
     photo._state.adding = True
     photo.album = album
     photo.is_private = album.is_private
@@ -608,6 +609,7 @@ def save_album(request):
 
     for photo in Photos.objects.filter(album__slug=album_slug, is_private=False):
         photo.pk, photo.id = None, None
+        photo.faces_extracted = False
         photo._state.adding = True
         photo.album = album
         photo.save()

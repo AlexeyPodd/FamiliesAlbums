@@ -8,15 +8,15 @@ from django.db.models import Prefetch
 
 from mainapp.models import Photos, Albums
 from photoalbums.settings import BASE_DIR, REDIS_DATA_EXPIRATION_SECONDS, \
-    FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE, MEDIA_ROOT
+    FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE, MEDIA_ROOT, SEARCH_PEOPLE_LIMIT
 
 from .data_classes import FaceData, PatternData, PersonData
-from .models import Faces, Patterns, People
+from .models import Faces, Patterns, People, Clusters
 from .utils import set_album_photos_processed, redis_instance, redis_instance_raw
-from .supporters import DataDeletionSupporter, ManageClustersSupporter
+from .supporters import DataDeletionSupporter, ManageClustersSupporter, RedisSupporter
 
 
-class BaseHandler:
+class BaseRecognitionHandler:
     """Base class for all recognition Handlers"""
     start_message_template = ""
     finish_message_template = ""
@@ -36,7 +36,7 @@ class BaseHandler:
         raise NotImplementedError
 
 
-class FaceSearchingHandler(BaseHandler):
+class FaceSearchingHandler(BaseRecognitionHandler):
     """Class for handle automatic finding faces on album's photos."""
     start_message_template = "Starting to process album_pk. Now searching for faces on album\'s photos."
     finish_message_template = "Search for faces on album_pk album\'s photos has been finished."
@@ -100,7 +100,7 @@ class FaceSearchingHandler(BaseHandler):
         redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
 
-class RelateFacesHandler(BaseHandler):
+class RelateFacesHandler(BaseRecognitionHandler):
     """Class for automatic joining founded faces into patterns."""
     start_message_template = "Starting to relate founded faces on photos of album album_pk."
     finish_message_template = "Relating faces of album_pk album has been finished."
@@ -203,7 +203,7 @@ class RelateFacesHandler(BaseHandler):
         redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
 
-class ComparingExistingAndNewPeopleHandler(BaseHandler):
+class ComparingExistingAndNewPeopleHandler(BaseRecognitionHandler):
     """Class for handling uniting people of processing album with previously created people of this user."""
     start_message_template = "Starting to compare created people of album album_pk with previously created people."
     finish_message_template = "Comparing people of album_pk album with previously created people has been finished."
@@ -439,7 +439,7 @@ class ComparingExistingAndNewPeopleHandler(BaseHandler):
         redis_instance.expire(f"album_{self._album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
 
-class SavingAlbumRecognitionDataToDBHandler(BaseHandler):
+class SavingAlbumRecognitionDataToDBHandler(BaseRecognitionHandler):
     """Class for saving recognition data of album to SQL Data Base from redis."""
     start_message_template = "Starting to save album album_pk recognition data to Data Base."
     finish_message_template = "Recognition data of album_pk album successfully saved to Data Base."
@@ -584,15 +584,17 @@ class SavingAlbumRecognitionDataToDBHandler(BaseHandler):
     def _save_main_data(self):
         album = Albums.objects.select_related('owner').prefetch_related('photos_set').get(pk=self._album_pk)
 
+        count_new_people = 0
         for person in self._people:
             if person.pair_pk is None:
-                self._create_person_instance(person, album)
+                count_new_people += 1
+                self._create_person_instance(person, album, person_number_in_album=count_new_people)
             else:
                 self._update_person_instance(person, album)
 
-    def _create_person_instance(self, person_data, album):
+    def _create_person_instance(self, person_data, album, person_number_in_album):
         person_instance = People(owner=album.owner,
-                                 name=f"{album.title[:20]}__{person_data.redis_indx}__{album.owner.username[:10]}")
+                                 name=f"{album.title[:20]}__{person_number_in_album}__{album.owner.username[:10]}")
         person_instance.save()
 
         patterns_instances = []
@@ -713,10 +715,85 @@ class SavingAlbumRecognitionDataToDBHandler(BaseHandler):
         DataDeletionSupporter.clean_after_recognition(album_pk=self._album_pk)
 
 
-class ClearTempDataHandler(BaseHandler):
+class ClearTempDataHandler(BaseRecognitionHandler):
     """Class for clearing temporary system files and redis after processing album photos."""
     start_message_template = "Starting to delete temp files and redis data of album album_pk."
     finish_message_template = "Deletion temp files and redis data of album_pk album successfully done."
 
     def handle(self):
         DataDeletionSupporter.clean_after_recognition(album_pk=self._album_pk)
+
+
+class SimilarPeopleSearchingHandler:
+    """Class for searching people in other users photos, who look like the person in the user's photos.
+    Search is based on patterns in the fractal structure of clusters."""
+    start_message_template = "Starting to search person person_pk."
+    finish_message_template = "Search of person person_pk is finished."
+
+    def __init__(self, person_pk):
+        self._person_pk = person_pk
+
+    @property
+    def start_message(self):
+        return self.start_message_template.replace("person_pk", str(self._person_pk))
+
+    @property
+    def finish_message(self):
+        return self.finish_message_template.replace("person_pk", str(self._person_pk))
+
+    def handle(self):
+        self._owner_pk = People.objects.select_related('owner').get(pk=self._person_pk).owner.pk
+        similar_people_pks = self._find_similar_people()
+        RedisSupporter.set_founded_similar_people(person_pk=self._person_pk, pks=similar_people_pks)
+
+    def _find_similar_people(self):
+        person_patterns = Patterns.objects.filter(person__pk=self._person_pk).select_related('central_face')
+        nearest_people = {}
+        for pattern in person_patterns:
+            nearest_patterns = self._find_nearest_patterns(
+                pattern_central_encoding=pickle.loads(pattern.central_face.encoding),
+            )
+            for patt, distance in nearest_patterns:
+                if nearest_people.setdefault(patt.person, distance) > distance:
+                    nearest_people[patt.person] = distance
+
+            RedisSupporter.encrease_patterns_search_amount(self._person_pk)
+
+        list_of_nearest_people = sorted(filter(lambda p: p.pk != self._person_pk and p.owner.pk != self._owner_pk,
+                                               nearest_people.keys()), key=lambda k: nearest_people[k])
+        return [person.pk for person in list_of_nearest_people][:SEARCH_PEOPLE_LIMIT]
+
+    def _find_nearest_patterns(self, pattern_central_encoding, pool=None):
+        """Recursive function for finding roughly nearest patterns in fractal structure."""
+        if pool is None:
+            pool = [(Clusters.objects.prefetch_related('patterns_set', 'clusters_set').get(pk=1), 0)]
+
+        if any(map(lambda t: isinstance(t[0], Clusters), pool)):
+            collected_nodes = []
+            for node, distance in pool:
+                if len(collected_nodes) >= SEARCH_PEOPLE_LIMIT * 3 and\
+                        all(map(lambda t: t[1] < distance, collected_nodes)):
+                    break
+                elif isinstance(node, Clusters):
+                    subclusters = node.clusters_set.all()
+                    if subclusters:
+                        subclusters_encodings = list(map(lambda sub: pickle.loads(sub.center.central_face.encoding),
+                                                         subclusters))
+                        subclusters_distances = fr.face_distance(subclusters_encodings, pattern_central_encoding)
+                        collected_nodes.extend(list(zip(subclusters, subclusters_distances)))
+
+                    subpatterns = node.patterns_set.all()
+                    if subpatterns:
+                        subpatterns_encodings = list(map(lambda sub: pickle.loads(sub.central_face.encoding),
+                                                         subpatterns))
+                        subpatterns_distances = fr.face_distance(subpatterns_encodings, pattern_central_encoding)
+                        collected_nodes.extend(list(zip(subpatterns, subpatterns_distances)))
+                else:
+                    collected_nodes.extend([(node, distance)])
+
+            collected_nodes.sort(key=lambda t: t[1])
+            nearest_nodes = collected_nodes[:SEARCH_PEOPLE_LIMIT * 3]
+            return self._find_nearest_patterns(pattern_central_encoding=pattern_central_encoding, pool=nearest_nodes)
+
+        else:
+            return pool

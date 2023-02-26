@@ -25,7 +25,7 @@
                     </div>
                     {% endif %}
                     <div class="col-12 my-2">
-                        <img src="{% url 'get_face_img' face_slug=faces_slugs|lookup:forloop.counter0 %}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
+                        <img src="{% url 'get_face_img' %}?face={{ faces_slugs|lookup:forloop.counter0 }}" alt="" style="width: 100%; height: auto; max-height: 100px; object-fit: contain;">
                     </div>
                     <div class="col-12">
                         {{ form.name }}
@@ -35,6 +35,10 @@
             </div>
         </div>
         {% endfor %}
+        {% if not fomset.forms %}
+        <p class="h1">All recognized people in this album were paired with people from other albums.</p>
+        <p class="h1">You can rename them on their pages.</p>
+        {% endif %}
     </div>
 
     {% block submit_button %}
