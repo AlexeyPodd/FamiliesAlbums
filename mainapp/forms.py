@@ -154,7 +154,13 @@ class CustomInlineFormset(BaseInlineFormSet):
 
         for instance in instances:
             if instance.is_private and not instance.original_is_private:
+                # remove from other users favorites
                 instance.in_users_favorites.clear()
+
+                # Delete all recognized faces
+                if instance.faces_extracted:
+                    for face in instance.faces_set.all():
+                        face.delete()
             if commit:
                 instance.save()
 

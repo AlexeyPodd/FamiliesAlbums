@@ -337,15 +337,25 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
 
         self.photos_formset.save()
 
+        need_new_cover = False
+
         # deleting marked objects
         for delete_value in self.photos_formset.deleted_objects:
+            if delete_value.pk == self.object.miniature.pk:
+                need_new_cover = True
             delete_value.delete()
 
-        # set default miniature if old become private
+        # check if old cover become private
         self.object = self.get_object()
         if self.object.miniature and not self.object.is_private and self.object.miniature.is_private:
-            self.object.miniature = None
-            self.object.save()
+            need_new_cover = True
+
+        # Set new album cover, if needed
+        if need_new_cover:
+            cover = self.object.photos_set.filter(is_private=False).order_by('?').first()
+            if cover:
+                self.object.miniature = cover
+                self.object.save()
 
         return HttpResponseRedirect(self.get_success_url())
 

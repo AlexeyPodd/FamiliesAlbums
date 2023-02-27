@@ -1,7 +1,7 @@
 import os
 import pickle
 import re
-from typing import List
+from typing import List, Tuple
 
 import face_recognition as fr
 from django.http import Http404
@@ -9,7 +9,7 @@ from django.http import Http404
 from mainapp.models import Photos
 from photoalbums.settings import MEDIA_ROOT, CLUSTER_LIMIT, MINIMAL_CLUSTER_TO_RECALCULATE, \
     UNREGISTERED_PATTERNS_CLUSTER_RELEVANT_LIMIT, REDIS_DATA_EXPIRATION_SECONDS
-from .data_classes import FaceData, PatternData
+from .data_classes import FaceData, PatternData, PersonData
 from .models import Faces, Patterns, Clusters
 from .utils import redis_instance, redis_instance_raw
 
@@ -46,6 +46,11 @@ class DataDeletionSupporter:
 class RedisSupporter:
     @staticmethod
     def set_stage_and_status(album_pk: int, stage: int, status: str):
+        if status not in ("processing", "completed"):
+            raise ValueError("status should be \"processing\" or \"completed\"")
+        if stage not in range(-1, 10):
+            raise ValueError("Unsupported stage value")
+
         redis_instance.hset(f"album_{album_pk}", "current_stage", stage)
         redis_instance.hset(f"album_{album_pk}", "status", status)
         redis_instance.expire(f"album_{album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
@@ -78,6 +83,11 @@ class RedisSupporter:
         redis_instance.expire(f"album_{album_pk}_finished", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
+    def set_finished(album_pk: int):
+        redis_instance.set(f"album_{album_pk}_finished", 1)
+        redis_instance.expire(f"album_{album_pk}_finished", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
     def get_processed_photos_amount(album_pk: int):
         try:
             return int(redis_instance.hget(f"album_{album_pk}", "number_of_processed_photos"))
@@ -94,6 +104,26 @@ class RedisSupporter:
         return faces_locations
 
     @staticmethod
+    def set_photo_faces_data(album_pk: int, photo_pk: int, data: List[Tuple]):
+        i = 0
+        for i, (location, encoding) in enumerate(data, 1):
+            redis_instance.hset(f"photo_{photo_pk}", f"face_{i}_location", pickle.dumps(location))
+            redis_instance.hset(f"photo_{photo_pk}", f"face_{i}_encoding", encoding.dumps())
+        redis_instance.hset(f"photo_{photo_pk}", "faces_amount", i)
+        redis_instance.expire(f"photo_{photo_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.hincrby(f"album_{album_pk}", "number_of_processed_photos")
+        redis_instance.expire(f"album_{album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
+    def get_faces_data_of_photo(photo_pk: int):
+        faces_amount = int(redis_instance.hget(f"photo_{photo_pk}", "faces_amount"))
+        photo_faces = [FaceData(photo_pk, i,
+                                pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{i}_location")),
+                                pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{i}_encoding")))
+                       for i in range(1, faces_amount + 1)]
+        return photo_faces
+
+    @staticmethod
     def register_photo_processed(album_pk: int):
         redis_instance.hincrby(f"album_{album_pk}", "number_of_processed_photos")
         redis_instance.expire(f"album_{album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
@@ -102,6 +132,11 @@ class RedisSupporter:
     def reset_processed_photos_amount(album_pk: int):
         redis_instance.hset(f"album_{album_pk}", "number_of_processed_photos", 0)
         redis_instance.expire(f"album_{album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
+    def set_photos_slugs(album_pk: int, photos_slugs: List[str]):
+        redis_instance.rpush(f"album_{album_pk}_photos", *photos_slugs)
+        redis_instance.expire(f"album_{album_pk}_photos", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
     def get_first_photo_slug(album_pk: int):
@@ -115,6 +150,11 @@ class RedisSupporter:
     def get_next_photo_slug(album_pk: int, current_photo_slug: str):
         return redis_instance.lindex(f"album_{album_pk}_photos",
                                      redis_instance.lpos(f"album_{album_pk}_photos", current_photo_slug) + 1)
+
+    @staticmethod
+    def delete_photo_slug(album_pk: int, photo_slug: str):
+        redis_instance.lrem(f"album_{album_pk}_photos", 1, photo_slug)
+        redis_instance.expire(f"album_{album_pk}_photos", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
     def get_photo_slugs_amount(album_pk: int):
@@ -137,6 +177,18 @@ class RedisSupporter:
             return True
         else:
             return False
+
+    @staticmethod
+    def get_single_photo_with_one_face(photos_pks):
+        photo_pk_with_face = None
+        for pk in photos_pks:
+            if redis_instance.hexists(f"photo_{pk}", "face_1_location"):
+                if photo_pk_with_face is None:
+                    photo_pk_with_face = pk
+                else:
+                    raise Exception("Was founded multiple faces. Need relate them before saving.")
+
+        return photo_pk_with_face
 
     @classmethod
     def renumber_faces_of_photo(cls, photo_pk):
@@ -171,6 +223,19 @@ class RedisSupporter:
     def is_face_in_photo(photo_pk: int, face_index: int):
         return redis_instance.hexists(f"photo_{photo_pk}", f"face_{face_index}_location")
 
+    @classmethod
+    def set_patterns_data(cls, album_pk: int, patterns: List[PatternData]):
+        for i, pattern in enumerate(patterns, 1):
+            for j, face in enumerate(pattern, 1):
+                redis_instance.hset(f"album_{album_pk}_pattern_{i}",
+                                    f"face_{j}",
+                                    f"photo_{face.photo_pk}_face_{face.index}")
+                if face is pattern.central_face:
+                    redis_instance.hset(f"album_{album_pk}_pattern_{i}",
+                                        "central_face",
+                                        f"face_{j}")
+            cls.set_pattern_faces_amount(album_pk, pattern_index=i, faces_amount=len(pattern))
+
     @staticmethod
     def is_face_in_pattern(album_pk: int, face_index: int, pattern_index: int):
         return redis_instance.hexists(f"album_{album_pk}_pattern_{pattern_index}", f"face_{face_index}")
@@ -194,6 +259,7 @@ class RedisSupporter:
     @staticmethod
     def set_pattern_faces_amount(album_pk: int, pattern_index: int, faces_amount: int):
         redis_instance.hset(f"album_{album_pk}_pattern_{pattern_index}", "faces_amount", faces_amount)
+        redis_instance.expire(f"album_{album_pk}_pattern_{pattern_index}", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
     def get_verified_patterns_amount(album_pk: int):
@@ -201,6 +267,109 @@ class RedisSupporter:
             return int(redis_instance.hget(f"album_{album_pk}", "number_of_verified_patterns"))
         except TypeError:
             return 0
+
+    @staticmethod
+    def check_any_person_found(album_pk: int):
+        return redis_instance.exists(f"album_{album_pk}_person_1")
+
+    @staticmethod
+    def check_single_pattern_formed(album_pk: int):
+        return redis_instance.exists(f"album_{album_pk}_pattern_1") and \
+            not redis_instance.exists(f"album_{album_pk}_pattern_2")
+
+    @staticmethod
+    def get_face_data(album_pk: int, pattern_ind: int, face_ind_in_pattern: int):
+        face_address = redis_instance.hget(f"album_{album_pk}_pattern_{pattern_ind}", f"face_{face_ind_in_pattern}")
+        photo_pk, face_ind = re.search(r'photo_(\d+)_face_(\d+)', face_address).groups()
+        face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_location"))
+        face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{face_ind}_encoding"))
+        face_data = FaceData(photo_pk=int(photo_pk),
+                             index=int(face_ind),
+                             location=face_loc,
+                             encoding=face_enc)
+        return face_data
+
+    @classmethod
+    def get_pattern_data(cls, album_pk: int, pattern_ind: int, pattern_central_face_ind: int):
+        for k in range(1, int(redis_instance.hget(f"album_{album_pk}_pattern_{pattern_ind}", "faces_amount")) + 1):
+            face_data = cls.get_face_data(album_pk=album_pk, pattern_ind=pattern_ind, face_ind_in_pattern=k)
+            if k == 1:
+                pattern_data = PatternData(face_data)
+            else:
+                pattern_data.add_face(face_data)
+
+            if k == pattern_central_face_ind:
+                pattern_data.central_face = face_data
+
+        return pattern_data
+
+    @classmethod
+    def get_person_data(cls, album_pk: int, person_ind: int, pair_pk):
+        person_data = PersonData(redis_indx=person_ind, pair_pk=pair_pk)
+        j = 1
+        while redis_instance.hexists(f"album_{album_pk}_person_{person_ind}", f"pattern_{j}"):
+            pattern_ind = int(redis_instance.hget(f"album_{album_pk}_person_{person_ind}", f"pattern_{j}"))
+            pattern_ccentral_face_ind = int(redis_instance.hget(f"album_{album_pk}_pattern_{pattern_ind}",
+                                                                "central_face")[5:])
+            pattern_data = cls.get_pattern_data(album_pk=album_pk, pattern_ind=pattern_ind,
+                                                pattern_central_face_ind=pattern_ccentral_face_ind)
+            person_data.add_pattern(pattern_data)
+            j += 1
+        return person_data
+
+    @classmethod
+    def get_people_data(cls, album_pk: int):
+        people_data = []
+        i = 1
+        while redis_instance.exists(f"album_{album_pk}_person_{i}"):
+            if redis_instance.hexists(f"album_{album_pk}_person_{i}", "real_pair"):
+                pair_pk = int(redis_instance.hget(f"album_{album_pk}_person_{i}", "real_pair")[7:])
+            else:
+                pair_pk = None
+            person_data = cls.get_person_data(album_pk=album_pk, person_ind=i, pair_pk=pair_pk)
+            people_data.append(person_data)
+            i += 1
+
+        return people_data
+
+    @staticmethod
+    def create_person_from_single_pattern(album_pk: int):
+        person_data = PersonData(redis_indx=1)
+        pattern_central_face_ind = int(redis_instance.hget(f"album_{album_pk}_pattern_1", "central_face")[5:])
+        pattern_data = RedisSupporter.get_pattern_data(album_pk=album_pk, pattern_ind=1,
+                                                       pattern_central_face_ind=pattern_central_face_ind)
+        person_data.add_pattern(pattern_data)
+        return person_data
+
+    @staticmethod
+    def create_person_from_single_face(photo_pk):
+        person_data = PersonData(redis_indx=1)
+        face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_location"))
+        face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_encoding"))
+        face = FaceData(photo_pk=int(photo_pk),
+                        index=1,
+                        location=face_loc,
+                        encoding=face_enc)
+        pattern_data = PatternData(face)
+        person_data.add_pattern(pattern_data)
+        return person_data
+
+    @classmethod
+    def set_one_person_with_one_pattern_with_one_face(cls, album_pk: int, photo_pk: int):
+        redis_instance.hset(f"album_{album_pk}_pattern_1", "face_1", f"photo_{photo_pk}_face_1")
+        redis_instance.hset(f"album_{album_pk}_pattern_1", "central_face", "face_1")
+        redis_instance.hset(f"album_{album_pk}_pattern_1", "faces_amount", "1")
+        redis_instance.hset(f"album_{album_pk}_pattern_1", "person", "1")
+        redis_instance.hset(f"album_{album_pk}", "number_of_verified_patterns", "1")
+        redis_instance.expire(f"album_{album_pk}_pattern_1", REDIS_DATA_EXPIRATION_SECONDS)
+        cls.set_one_person_with_one_pattern(album_pk=album_pk)
+
+    @staticmethod
+    def set_one_person_with_one_pattern(album_pk: int):
+        redis_instance.hset(f"album_{album_pk}_person_1", "pattern_1", "1")
+        redis_instance.hset(f"album_{album_pk}", "people_amount", "1")
+        redis_instance.expire(f"album_{album_pk}_person_1", REDIS_DATA_EXPIRATION_SECONDS)
+        redis_instance.expire(f"album_{album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
     def move_face_data(album_pk: int, face_name: str, from_pattern: int, to_pattern: int):
@@ -290,6 +459,12 @@ class RedisSupporter:
             i += 1
         else:
             return False
+
+    @staticmethod
+    def set_matching_people(album_pk: int, pairs: List[Tuple[PersonData, PersonData]]):
+        for old_per, new_per in pairs:
+            redis_instance.hset(f"album_{album_pk}_person_{new_per.redis_indx}",
+                                "tech_pair", f"person_{old_per.pk}")
 
     @staticmethod
     def get_matching_people(album_pk: int):
@@ -671,8 +846,8 @@ class ManageClustersSupporter:
         was_central_pattern = parent.center is None
         cls.recalculate_center(parent, need_check_changes=not was_central_pattern)
 
-    @classmethod
-    def _delete_last_pattern(cls, pattern_instance):
+    @staticmethod
+    def _delete_last_pattern(pattern_instance):
         root = pattern_instance.cluster
         root.not_recalc_patt_del = 0
         root.save(update_fields=['not_recalc_patt_del'])

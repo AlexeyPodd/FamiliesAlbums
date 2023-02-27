@@ -5,14 +5,15 @@ from .task_handlers import FaceSearchingHandler, RelateFacesHandler, ComparingEx
     SavingAlbumRecognitionDataToDBHandler, ClearTempDataHandler, SimilarPeopleSearchingHandler
 
 logger = get_task_logger(__name__)
-recognition_handlers = {
-    1: FaceSearchingHandler,
-    3: RelateFacesHandler,
-    6: ComparingExistingAndNewPeopleHandler,
-    9: SavingAlbumRecognitionDataToDBHandler,
-    -1: ClearTempDataHandler,
-    0: SimilarPeopleSearchingHandler,
-}
+
+recognition_handlers = {handler.stage: handler for handler in [
+    FaceSearchingHandler,
+    RelateFacesHandler,
+    ComparingExistingAndNewPeopleHandler,
+    SavingAlbumRecognitionDataToDBHandler,
+    ClearTempDataHandler,
+    SimilarPeopleSearchingHandler,
+]}
 
 
 @shared_task
@@ -21,8 +22,3 @@ def recognition_task(object_pk: int, recognition_stage: int):
     logger.info(handler.start_message)
     handler.handle()
     return handler.finish_message
-
-
-@shared_task
-def print_task(message: str):
-    return message

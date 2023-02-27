@@ -5,7 +5,6 @@ from django.forms import formset_factory
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse_lazy, reverse
-from django.views.decorators.csrf import csrf_protect
 from django.views.generic import ListView, DetailView
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db.models import Count, Q, Prefetch
@@ -1070,18 +1069,24 @@ class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        instructions = [
-            "These are all new people that have been discovered in this album."
-            "They will be saved under these names.",
-        ]
         title = f'Album \"{self.object}\" - renaming people'
-        
+
+        if self._people:
+            heading = "Rename people, if you want"
+            instructions = [
+                "These are all new people that have been discovered in this album.",
+                "They will be saved under these names.",
+            ]
+        else:
+            heading = "All recognized people in this album were paired with people from other albums"
+            instructions = ["You can rename them on their pages"]
+
         faces_slugs = tuple(map(lambda p: p.patterns_set.first().faces_set.first().slug, self._people))
 
         context.update({
             'is_ready': True,
             'progress': 100,
-            'heading': "Rename people, if you want",
+            'heading': heading,
             'instructions': instructions,
             'title': title,
             'button_label': "Finish recognition",

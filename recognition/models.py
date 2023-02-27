@@ -75,4 +75,3 @@ class Clusters(models.Model):
     class Meta:
         verbose_name = 'Fractal Cluster of Patterns'
         verbose_name_plural = 'Fractal Clusters of Patterns'
-        ordering = ['-parent']

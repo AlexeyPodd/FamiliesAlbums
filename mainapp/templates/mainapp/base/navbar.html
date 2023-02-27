@@ -26,7 +26,7 @@
 
                 <div class="dropdown">
                     <a class="nav-link btn btn-light dropdown-toggle text-primary w-40" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        <img src="{% if request.user.avatar %}{{ request.user.avatar.url }}{% else %}{% static 'images/person-circle.svg' %}{% endif %}" alt="" width=30 class="rounded-circle">
+                        <img src="{% if request.user.avatar %}{{ request.user.avatar.url }}{% else %}{% static 'images/person-circle.svg' %}{% endif %}" alt="" width=30 height=30 class="rounded-circle">
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item{% if current_section == 'profile' %} active" aria-current="page{% endif %}" href="{% url 'user_profile' username_slug=request.user.username_slug %}">Profile</a></li>
