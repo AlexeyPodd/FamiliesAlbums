@@ -13,6 +13,7 @@ from django.views.generic.detail import SingleObjectMixin, DetailView
 from django.db.models import Count
 
 from accounts.models import User
+from photoalbums.settings import ALBUMS_AMOUNT_LIMIT, ALBUM_PHOTOS_AMOUNT_LIMIT
 from .forms import *
 from .utils import get_zip, delete_from_favorites, FavoritesPaginator, AboutPageInfo
 from .tasks import album_deletion_task
@@ -114,7 +115,11 @@ class UserAlbumsView(ListView):
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
         if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs['username_slug']:
-            context.update({'title': 'My albums', 'current_section': 'my_albums'})
+            context.update({
+                'title': 'My albums', 'current_section': 'my_albums',
+                'limit': ALBUMS_AMOUNT_LIMIT,
+                'limit_reached': self.object_list.count() >= ALBUMS_AMOUNT_LIMIT,
+            })
         else:
             context.update({'title': f"{self.kwargs['username_slug']}'s albums"})
 
@@ -211,13 +216,24 @@ class AlbumCreateView(LoginRequiredMixin, CreateView):
         if request.user.username_slug != self.kwargs['username_slug']:
             return redirect('create_album', username_slug=request.user.username_slug)
 
+        self._check_albums_amount_limit()
+
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         if request.user.username_slug != self.kwargs['username_slug']:
             return redirect('create_album', username_slug=request.user.username_slug)
 
+        self._check_albums_amount_limit()
+
         return super().post(request, *args, **kwargs)
+
+    def _check_albums_amount_limit(self):
+        created_albums_amount = self.form_class.Meta.model.objects.filter(
+            owner__username_slug=self.request.user.username_slug,
+        ).count()
+        if created_albums_amount >= ALBUMS_AMOUNT_LIMIT:
+            raise Http404
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -232,6 +248,12 @@ class AlbumCreateView(LoginRequiredMixin, CreateView):
         return form_kwargs
 
     def form_valid(self, form):
+        # Validating amount of uploaded photos
+        if len(self.request.FILES.getlist('images')) > ALBUM_PHOTOS_AMOUNT_LIMIT:
+            msg = f"You can upload only {ALBUM_PHOTOS_AMOUNT_LIMIT} photos in each album"
+            form.add_error('images', msg)
+            return self.form_invalid(form)
+
         form.instance.owner_id = self.request.user.pk
 
         self.object = form.save()
@@ -327,10 +349,16 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
         if not self._check_dates_match(form):
             return self.form_invalid(form)
 
+        # Validating amount of uploaded photos
+        if self.object.photos_set.count() + len(self.request.FILES.getlist('images')) > ALBUM_PHOTOS_AMOUNT_LIMIT:
+            msg = f"You can upload only {ALBUM_PHOTOS_AMOUNT_LIMIT} photos in each album"
+            form.add_error('images', msg)
+            return self.form_invalid(form)
+
         self.object = form.save()
 
         # Adding uploaded photos to album and choosing random cover
-        had_photos = self.object.photos_set.all().exists()
+        had_photos = self.object.photos_set.exists()
         self._add_images_to_album_object(form)
         if not had_photos:
             self._set_random_album_cover()

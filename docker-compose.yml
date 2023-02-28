@@ -23,7 +23,7 @@ services:
   celery:
     build: .
     container_name: celery
-    command: celery -A photoalbums worker -l INFO
+    command: sh ./celery_start_script
     volumes:
       - .:/usr/src/familie_albums
     depends_on:

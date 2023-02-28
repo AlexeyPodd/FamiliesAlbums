@@ -7,8 +7,8 @@ import face_recognition as fr
 from django.http import Http404
 
 from mainapp.models import Photos
-from photoalbums.settings import MEDIA_ROOT, CLUSTER_LIMIT, MINIMAL_CLUSTER_TO_RECALCULATE, \
-    UNREGISTERED_PATTERNS_CLUSTER_RELEVANT_LIMIT, REDIS_DATA_EXPIRATION_SECONDS
+from photoalbums.settings import TEMP_ROOT, CLUSTER_LIMIT, MINIMAL_CLUSTER_TO_RECALCULATE, \
+    UNREGISTERED_PATTERNS_CLUSTER_RELEVANT_LIMIT, REDIS_DATA_EXPIRATION_SECONDS, CACHE_ROOT
 from .data_classes import FaceData, PatternData, PersonData
 from .models import Faces, Patterns, Clusters
 from .utils import redis_instance, redis_instance_raw
@@ -18,13 +18,13 @@ class DataDeletionSupporter:
     @classmethod
     def prepare_to_recognition(cls, album_pk):
         cls._clear_redis_album_data(album_pk, finished=False)
-        cls._clear_temp_files(album_pk)
+        cls._clear_temp_album_files(album_pk)
         cls._clear_db_album_data(album_pk)
 
     @classmethod
     def clean_after_recognition(cls, album_pk):
         cls._clear_redis_album_data(album_pk, finished=True)
-        cls._clear_temp_files(album_pk)
+        cls._clear_temp_album_files(album_pk)
 
     @staticmethod
     def _clear_redis_album_data(album_pk, finished):
@@ -32,15 +32,24 @@ class DataDeletionSupporter:
         RedisSupporter.clear_redis_album_data(album_pk, finished=finished, photo_pks=pks)
 
     @staticmethod
-    def _clear_temp_files(album_pk):
-        path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{album_pk}')
+    def delete_temp_directory(directory_name):
+        path = os.path.join(TEMP_ROOT, directory_name)
         if os.path.exists(path):
             os.system(f'rm -rf {path}')
+
+    @classmethod
+    def _clear_temp_album_files(cls, album_pk):
+        directory_name = f'album_{album_pk}'
+        cls.delete_temp_directory(directory_name)
 
     @staticmethod
     def _clear_db_album_data(album_pk):
         for face in Faces.objects.filter(photo__album__pk=album_pk):
             Faces.objects.get(pk=face.pk).delete()
+
+    @staticmethod
+    def clear_cache():
+        os.system(f"rm {CACHE_ROOT}/*")
 
 
 class RedisSupporter:
@@ -604,6 +613,10 @@ class RedisSupporter:
         redis_instance.delete(f"nearest_people_to_{person_pk}")
         redis_instance.set(f"person_{person_pk}_processed_patterns_amount", 0)
         redis_instance.expire(f"person_{person_pk}_processed_patterns_amount", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
+    def check_album_in_processing(temp_dir_name):
+        return redis_instance.exists(temp_dir_name)
 
 
 class ManageClustersSupporter:

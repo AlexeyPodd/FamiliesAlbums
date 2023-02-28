@@ -6,8 +6,8 @@ from PIL import Image
 from django.db.models import Prefetch
 
 from mainapp.models import Photos, Albums
-from photoalbums.settings import BASE_DIR, FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE,\
-    MEDIA_ROOT, SEARCH_PEOPLE_LIMIT
+from photoalbums.settings import BASE_DIR, FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE, \
+    MEDIA_ROOT, SEARCH_PEOPLE_LIMIT, TEMP_ROOT
 
 from .data_classes import FaceData, PatternData, PersonData
 from .models import Faces, Patterns, People, Clusters
@@ -85,7 +85,7 @@ class BaseRecognitionLateStageHandler(BaseRecognitionHandler):
         pil_image = Image.fromarray(face_image)
 
         # Save face image to temp folder
-        path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/patterns', '1')
+        path = os.path.join(TEMP_ROOT, f'album_{self._album_pk}/patterns', '1')
         if not os.path.exists(path):
             os.makedirs(path)
         save_path = os.path.join(path, '1.jpg')
@@ -110,7 +110,7 @@ class FaceSearchingHandler(BaseRecognitionHandler):
 
     def _get_path(self):
         if self._path is None:
-            self._path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/frames')
+            self._path = os.path.join(TEMP_ROOT, f'album_{self._album_pk}/frames')
 
     def _prepare_to_recognition(self):
         DataDeletionSupporter.prepare_to_recognition(self._album_pk)
@@ -199,7 +199,7 @@ class RelateFacesHandler(BaseRecognitionHandler):
 
     def _prepare_path(self):
         if self._path is None:
-            path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self._album_pk}/patterns')
+            path = os.path.join(TEMP_ROOT, f'album_{self._album_pk}/patterns')
             if not os.path.exists(path):
                 os.makedirs(path)
             self._path = path

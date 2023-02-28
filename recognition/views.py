@@ -1,6 +1,8 @@
 import os
+import pickle
 
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.forms import formset_factory
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
@@ -17,7 +19,7 @@ from .forms import *
 from .models import Faces, People, Patterns
 from .supporters import RedisSupporter
 from .tasks import recognition_task
-from photoalbums.settings import MEDIA_ROOT, BASE_DIR
+from photoalbums.settings import MEDIA_ROOT, BASE_DIR, REDIS_DATA_EXPIRATION_SECONDS
 from .utils import set_album_photos_processed
 from .mixin_views import RecognitionMixin
 
@@ -32,14 +34,19 @@ def return_face_image_view(request):
         raise Http404
 
     face = Faces.objects.select_related('photo').get(slug=face_slug)
-    if not request.user.is_authenticated or face.photo.is_private:
+    if not request.user.is_authenticated or not face or face.photo.is_private:
         raise Http404
+
+    response = cache.get(face_slug)
+    if response:
+        return response
 
     photo_img = Image.open(os.path.join(BASE_DIR, face.photo.original.url[1:]))
     top, right, bottom, left = face.loc_top, face.loc_right, face.loc_bot, face.loc_left
     face_img = photo_img.crop((left, top, right, bottom))
     response = HttpResponse(content_type='image/jpg')
     face_img.save(response, "JPEG")
+    cache.set(face_slug, response, 60 * 5)
     return response
 
 

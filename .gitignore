@@ -4,3 +4,5 @@ mysql_db/
 .dockerignore
 photoalbums/settings.py
 static/CACHE/
+site_cache/
+celerybeat-schedule

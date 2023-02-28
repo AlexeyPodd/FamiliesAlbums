@@ -1,0 +1,3 @@
+#!/bin/sh -ex
+celery -A photoalbums worker -l INFO &
+celery -A photoalbums beat -l INFO

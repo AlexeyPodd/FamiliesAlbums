@@ -52,7 +52,7 @@
         </div>
         {% endif %}
         <div class=" col-9 col-md-6 col-xl-4 px-3">
-            <a href="{% url 'album_create' owner_slug %}" class="btn btn-primary btn-lg w-100">Create new album</a>
+            <a {% if not limit_reached %}href="{% url 'album_create' owner_slug %}" {% endif %}class="btn btn-primary btn-lg w-100{% if limit_reached %} disabled" aria-disabled="true">You can create up to {{ limit }} albums{% else %}">Create new album{% endif %}</a>
         </div>
     </div>
     {% endif %}
