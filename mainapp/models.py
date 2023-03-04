@@ -9,9 +9,9 @@ from .utils import get_photo_save_path, TruncatingCharField
 
 class Albums(models.Model):
     title = models.CharField(max_length=100, verbose_name='Title')
-    slug = AutoSlugField(populate_from=['owner__username_slug', 'title'], db_index=True, verbose_name='URL')
-    date_start = models.DateField(blank=True, null=True, verbose_name='Photo date start')
-    date_end = models.DateField(blank=True, null=True, verbose_name='Photo date end')
+    slug = AutoSlugField(populate_from=['owner__username_slug', 'title'], db_index=True, verbose_name='Slug')
+    date_start = models.DateField(blank=True, null=True, verbose_name='Photos date start')
+    date_end = models.DateField(blank=True, null=True, verbose_name='Photos date end')
     location = models.CharField(max_length=63, blank=True, verbose_name='Location')
     description = models.CharField(max_length=1023, blank=True, verbose_name='Description')
     time_create = models.DateTimeField(auto_now_add=True, verbose_name="Date of creation")
@@ -34,8 +34,8 @@ class Albums(models.Model):
         return self.title
 
     class Meta:
-        verbose_name = 'User Album'
-        verbose_name_plural = 'Users Albums'
+        verbose_name = 'Album'
+        verbose_name_plural = 'Albums'
         ordering = ['time_create']
 
 
@@ -53,7 +53,7 @@ class Photos(models.Model):
     original = ResizedImageField(upload_to=get_photo_save_path, verbose_name="Original")
     in_users_favorites = models.ManyToManyField(AUTH_USER_MODEL, blank=True, related_name='photo_in_users_favorites',
                                                 verbose_name="In Users' Favorites")
-    faces_extracted = models.BooleanField(default=False, verbose_name='Faces Extracted')
+    faces_extracted = models.BooleanField(default=False, verbose_name='Processed')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -68,6 +68,6 @@ class Photos(models.Model):
         return self.title
 
     class Meta:
-        verbose_name = 'User Photo'
-        verbose_name_plural = 'Users Photos'
+        verbose_name = 'Photo'
+        verbose_name_plural = 'Photos'
         ordering = ['time_create']

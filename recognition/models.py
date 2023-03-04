@@ -1,4 +1,5 @@
 from django.db import models
+from django.urls import reverse
 from django_extensions.db.fields import AutoSlugField
 
 from mainapp.models import Photos
@@ -55,6 +56,9 @@ class People(models.Model):
     def __str__(self):
         return self.name
 
+    def get_absolute_url(self):
+        return reverse('person', kwargs={'person_slug': self.slug})
+
     class Meta:
         verbose_name = 'Recognized Person'
         verbose_name_plural = 'Recognized People'
@@ -75,3 +79,4 @@ class Clusters(models.Model):
     class Meta:
         verbose_name = 'Fractal Cluster of Patterns'
         verbose_name_plural = 'Fractal Clusters of Patterns'
+        ordering = ['parent_id', 'id']

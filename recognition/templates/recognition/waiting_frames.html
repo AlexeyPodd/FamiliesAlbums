@@ -2,15 +2,6 @@
 
 {% block info %}
 <div class="col-12 mt-2">
-    <p class="h5">
-        {% if is_ready %}
-        All
-        {% else %}
-        {{ number_of_processed_photos }}/{{ album.public_photos }}
-        {% endif %}
-        public photos processed
-    </p>
+    <p class="h5">{{ number_of_processed_photos }}/{{ album.public_photos }} public photos processed</p>
 </div>
 {% endblock %}
-
-{% block next_url %}{% url next album_slug=album.slug photo_slug=photo_slug %}{% endblock %}

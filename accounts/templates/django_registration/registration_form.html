@@ -1,1 +1,8 @@
 {% extends 'accounts/base/form_base.html' %}
+{% load static %}
+
+{% block bottom_additional_content %}
+<div class="text-center">
+    <small><a href="{% static 'Terms of use.pdf' %}">Terms of use</a></small>
+</div>
+{% endblock %}

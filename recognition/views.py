@@ -1,5 +1,4 @@
 import os
-import pickle
 
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
@@ -19,7 +18,7 @@ from .forms import *
 from .models import Faces, People, Patterns
 from .supporters import RedisSupporter
 from .tasks import recognition_task
-from photoalbums.settings import MEDIA_ROOT, BASE_DIR, REDIS_DATA_EXPIRATION_SECONDS
+from photoalbums.settings import MEDIA_ROOT, BASE_DIR
 from .utils import set_album_photos_processed
 from .mixin_views import RecognitionMixin
 
@@ -170,6 +169,11 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
             recognition_task.delay(self.object.pk, -1)
             return redirect('no_faces', album_slug=self.object.slug)
 
+        self._status = RedisSupporter.get_status(self.object.pk)
+        if self._status == "completed":
+            return redirect('verify_frames', album_slug=self.object.slug,
+                            photo_slug=RedisSupporter.get_first_photo_slug(self.object.pk))
+
         return super().get(request, *args, **kwargs)
 
     def _check_recognition_stage(self, waiting_task=True):
@@ -181,37 +185,18 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
         context = super().get_context_data(**kwargs)
 
         number_of_processed_photos = RedisSupporter.get_processed_photos_amount(self.object.pk)
-        status = RedisSupporter.get_status(self.object.pk)
-
-        if status == "processing":
-            progress = 10
-            is_ready = False
-            instructions = [
-                "We are searching for faces on photos of this album.",
-                " This may take a minute or two.",
-                "Please refresh this page until you see that all the photos have been processed.",
-            ]
-            title = f'Album \"{self.object}\" - waiting'
-        else:
-            progress = 20
-            is_ready = True
-            instructions = [
-                "We are ready to continue. You can press the button!",
-            ]
-            title = f'Album \"{self.object}\" - ready to continue'
-
-        first_photo_slug = RedisSupporter.get_first_photo_slug(self.object.pk)
+        instructions = [
+            "We are searching for faces on photos of this album.",
+            "This may take a minute or two.",
+            "Please refresh this page.",
+        ]
 
         context.update({
             'heading': "Searching for faces on album's photos",
-            'progress': progress,
+            'progress': 10,
             'instructions': instructions,
-            'is_ready': is_ready,
-            'title': title,
+            'title': f'Album \"{self.object}\" - waiting',
             'number_of_processed_photos': number_of_processed_photos,
-            'button_label': "Verify frames",
-            'next': 'verify_frames',
-            'photo_slug': first_photo_slug,
         })
 
         return context
@@ -372,41 +357,33 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView)
     model = Albums
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
-    template_name = 'recognition/waiting_patterns.html'
+    template_name = 'recognition/base/waiting_base.html'
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks(waiting_task=True)
         self.status = RedisSupporter.get_status(self.object.pk)
+
+        if self.status == "completed":
+            return redirect('verify_patterns', album_slug=self.object.slug)
 
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        if self.status == "processing":
-            title = f'Album \"{self.object}\" - waiting'
-            is_ready = False
-            progress = 30
-            instructions = [
-                "Now verified faces are combined into patterns.",
-                "This should take no more than a moment.",
-                "Please refresh this page now.",
-            ]
-
-        else:
-            title = f'Album \"{self.object}\" - ready to continue'
-            is_ready = True
-            progress = 40
-            instructions = ["Patterns of faces has created, we are ready to continue."]
+        title = f'Album \"{self.object}\" - waiting'
+        progress = 30
+        instructions = [
+            "Now verified faces are combined into patterns.",
+            "This should take no more than a moment.",
+            "Please refresh this page now.",
+        ]
 
         context.update({
             'title': title,
-            'is_ready': is_ready,
             'progress': progress,
             'heading': "Recognizing faces. Creating patterns.",
             'instructions': instructions,
-            'button_label': "Verify results",
-            'next': 'verify_patterns',
         })
 
         return context
@@ -681,61 +658,40 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, RecognitionMixin, Deta
     model = Albums
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
-    template_name = 'recognition/waiting_people.html'
+    template_name = 'recognition/base/waiting_base.html'
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks(waiting_task=True)
 
         self.status = RedisSupporter.get_status(self.object.pk)
         self._any_tech_matches = RedisSupporter.check_any_tech_matches(self.object.pk)
-        if self.status == 'completed' and not self._any_tech_matches:
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage+1,
-                                                status='completed')
+
+        if self.status == 'completed':
+            if self._any_tech_matches:
+                return redirect('verify_matches', album_slug=self.object.slug)
+            else:
+                RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage + 1,
+                                                    status='completed')
+                return redirect('manual_matching', album_slug=self.object.slug)
 
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        if self.status == "processing":
-            title = f'Album \"{self.object}\" - waiting'
-            is_ready = False
-            progress = 60
-            instructions = [
-                "Now the people found in the photos of this album are searched in your other processed albums.",
-                "This should take no more than a moment.",
-                "Please refresh the page.",
-            ]
-            button_label = 'waiting'
-            next = None
-
-        else:
-            title = f'Album \"{self.object}\" - ready to continue'
-            is_ready = True
-            progress = 70
-            if self._any_tech_matches:
-                instructions = [
-                    "Some matches are found.",
-                    "Please check them.",
-                ]
-                button_label = 'Check matches'
-                next = 'verify_matches'
-            else:
-                instructions = [
-                    "We didn't found any matches.",
-                    "Please continue.",
-                ]
-                button_label = 'Continue'
-                next = 'manual_matching'
+        title = f'Album \"{self.object}\" - waiting'
+        progress = 60
+        instructions = [
+            "Now the people found in the photos of this album are searched in your other processed albums.",
+            "This should take no more than a moment.",
+            "Please refresh the page.",
+        ]
 
         context.update({
             'title': title,
-            'is_ready': is_ready,
             'heading': "Looking for people matches in your other processed albums",
             'progress': progress,
             'instructions': instructions,
-            'button_label': button_label,
-            'next': next,
         })
 
         return context
@@ -1001,18 +957,15 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
         context = super().get_context_data(**kwargs)
         instructions = [
             "Saving recognised people data to Data Base",
-            "Once this is completed, you can search for people in other users' photos and they in yours."
+            "Once this is completed, you can search for people in other users' photos and they in yours.",
             "This may take a minute or two.",
             "Please refresh the page.",
         ]
         context.update({
             'title': f'Album \"{self.object}\" - waiting',
-            'is_ready': False,
             'heading': "Saving all data to Data Base",
             'progress': 90,
             'instructions': instructions,
-            'button_label': 'waiting',
-            'next': None,
         })
         return context
 

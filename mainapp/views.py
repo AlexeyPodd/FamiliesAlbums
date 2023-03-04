@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseNotFound, Http404, HttpResponseRedirect, FileResponse, HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.templatetags.static import static
 from django.urls import reverse_lazy
 from django.views.generic import ListView, TemplateView, CreateView, UpdateView

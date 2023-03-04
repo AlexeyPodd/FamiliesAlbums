@@ -9,7 +9,7 @@
     <div class="row my-3">
         <div class="col-12">
             <div class="progress mb-3" style="height: 25px;">
-                <div class="progress-bar{% if progress != 100 %} progress-bar-striped{% endif %}{% if not is_ready %} progress-bar-animated{% endif %}" role="progressbar" aria-label="Recognition Progress" style="width: {{ progress }}%" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100"></div>
+                <div class="progress-bar{% if progress != 100 %} progress-bar-striped progress-bar-animated{% endif %}" role="progressbar" aria-label="Recognition Progress" style="width: {{ progress }}%" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100"></div>
             </div>
             <h2>{{ heading }}</h2>
         </div>
@@ -32,9 +32,16 @@
             {% endfor %}
         </div>
         {% endblock %}
-
-        <div class="col-12 mt-auto">
-            <a class="btn btn-primary btn-lg w-50{% if not is_ready %} disabled{% endif %}" {% if is_ready %}href="{% block next_url %}{% url next %}{% endblock %}"{% else %}aria-disabled="true"{% endif %}>{{ button_label }}</a>
+        <div class="d-flex justify-content-center">
+            <div class="spinner-grow text-secondary mx-4" style="width: 5rem; height: 5rem;" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="spinner-grow text-secondary mx-4" style="width: 5rem; height: 5rem;" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <div class="spinner-grow text-secondary mx-4" style="width: 5rem; height: 5rem;" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
         </div>
     </div>
     {% endblock %}

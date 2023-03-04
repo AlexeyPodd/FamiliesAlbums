@@ -28,6 +28,8 @@ class SignupForm(RegistrationForm):
     password2 = forms.CharField(label='Password confirmation',
                                 widget=forms.PasswordInput(attrs={'class': 'form-control',
                                                                   'placeholder': 'password2'}))
+    agreement = forms.BooleanField(label='I agree to be bound by the terms of use agreement',
+                                   widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}))
 
     class Meta(RegistrationForm.Meta):
         model = User

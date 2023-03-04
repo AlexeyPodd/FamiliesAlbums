@@ -22,13 +22,13 @@
 <!--Fields-->
 {% block fields %}
 {% for field in form %}
-    <div class="form-floating mb-4{% if field.errors %} is-invalid{% endif %}">
+    <div class="{% if field.name == 'agreement' %}form-check{% else %}form-floating{% endif %} mb-4{% if field.errors %} is-invalid{% endif %}">
         {% if field.errors %}
             {{ field|add_attrs:"is-invalid" }}
         {% else %}
             {{ field }}
         {% endif %}
-        <label for="{{ field.id_for_label }}">{{field.label}}</label>
+        <label {% if field.name == 'agreement' %}class="form-check-label" {% endif %}for="{{ field.id_for_label }}">{{field.label}}</label>
         {% if field.errors %}
         <div class="invalid-feedback">
             {% for err in field.errors %}
