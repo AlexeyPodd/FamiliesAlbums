@@ -4,6 +4,10 @@ from recognition.supporters import RedisSupporter
 
 
 class RecognitionMixin:
+    def get(self, request, *args, **kwargs):
+        context = self.get_context_data(object=self.object)
+        return self.render_to_response(context)
+
     def _get_object_and_make_checks(self, queryset=None, waiting_task=False):
         self.object = self.get_object(queryset=queryset)
         self._check_access_right()
@@ -25,7 +29,19 @@ class RecognitionMixin:
                     stage == self.recognition_stage - 1 and status == "completed"):
                 raise Http404
 
+    def get_queryset(self):
+        return self.model.objects.select_related('owner').filter(owner__pk=self.request.user.pk)
+
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
         context.update({'top_heading': "Recognition processing album's photos"})
         return context
+
+
+class ManualRecognitionMixin(RecognitionMixin):
+    def post(self, request, *args, **kwargs):
+        form = self.get_form()
+        if form.is_valid():
+            return self.form_valid(form)
+        else:
+            return self.form_invalid(form)

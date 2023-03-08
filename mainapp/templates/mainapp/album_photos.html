@@ -23,7 +23,7 @@
                         {% if album.location %}<br>{% else %}</p><p class="card-text">{% endif %}
                         {{ album.date_start|default_if_none:'' }} - {{ album.date_end|default_if_none:'' }}</p>
                         {% endif %}
-                        {% if owner_slug != request.user.username_slug %}
+                        {% if not request.user.is_authenticated or owner_slug != request.user.username_slug %}
                         <a href="{% url 'user_profile' username_slug=owner_slug %}" class="btn btn-outline-primary w-50">Owner's profile</a>
                         {% endif %}
                     </div>
@@ -38,6 +38,7 @@
                         <div class="col-6 px-3">
                             <a href="{% url 'download' %}?album={{ album.slug }}" class="btn btn-lg btn-primary w-100">Download album</a>
                         </div>
+                        {% if request.user.is_authenticated %}
                         {% if owner_slug == request.user.username_slug %}
                         <div class="col-6 px-3">
                             <a href="{% url 'album_edit' username_slug=owner_slug album_slug=album.slug %}" class="btn btn-lg btn-primary w-100 mx-3">Edit album</a>
@@ -50,6 +51,7 @@
                                 <button type="submit" name="album" value="{{ album.slug }}" class="btn btn-lg btn-primary w-100{% if in_favorites %} disabled" aria-disabled="true"{% else %}"{% endif %}>Add to Favorites</button>
                             </form>
                         </div>
+                        {% endif %}
                         {% endif %}
                     </div>
                 </div>

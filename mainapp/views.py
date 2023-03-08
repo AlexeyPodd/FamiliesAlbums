@@ -31,6 +31,7 @@ class MainPageView(ListView):
             photos__isnull=False,
         ).select_related(
             'owner',
+            'miniature',
         ).annotate(
             Count('photos'),
         ).order_by(
@@ -105,9 +106,9 @@ class UserAlbumsView(ListView):
 
     def get_queryset(self):
         if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs['username_slug']:
-            queryset = self.model.objects.filter(owner__pk=self.request.user.pk).annotate(Count('photos'))
+            queryset = self.model.objects.filter(owner__pk=self.request.user.pk).select_related('miniature', 'owner').annotate(Count('photos'))
         else:
-            queryset = self.model.objects.filter(owner__username_slug=self.kwargs['username_slug'], is_private=False).annotate(Count('photos'))
+            queryset = self.model.objects.filter(owner__username_slug=self.kwargs['username_slug'], is_private=False).select_related('miniature', 'owner').annotate(Count('photos'))
             if not queryset:
                 raise Http404
         return queryset
@@ -118,7 +119,7 @@ class UserAlbumsView(ListView):
             context.update({
                 'title': 'My albums', 'current_section': 'my_albums',
                 'limit': ALBUMS_AMOUNT_LIMIT,
-                'limit_reached': self.object_list.count() >= ALBUMS_AMOUNT_LIMIT,
+                'limit_reached': len(self.object_list) >= ALBUMS_AMOUNT_LIMIT,
             })
         else:
             context.update({'title': f"{self.kwargs['username_slug']}'s albums"})
@@ -147,8 +148,11 @@ class AlbumView(SingleObjectMixin, ListView):
             'title': f'Album \"{self.object.title}\"',
             'album': self.object,
             'owner_slug': self.kwargs['username_slug'],
-            'in_favorites': self.object.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists(),
         })
+        
+        if self.request.user.is_authenticated:
+            context.update({'in_favorites': self.object.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists()})
+        
         return context
 
     def get_queryset(self):
@@ -177,9 +181,7 @@ class PhotoView(DetailView):
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
-        in_favorites = self.object.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists() or\
-                self.object.album.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists()
-
+        
         context.update({
             'title': f'\"{self.object.title}\" ({self.album.title})',
             'album': self.album,
@@ -187,8 +189,13 @@ class PhotoView(DetailView):
             'owner_name': User.objects.get(username_slug=self.kwargs['username_slug']).username,
             'previous_photo_url': self._get_neighbor_photo_url(right=False),
             'next_photo_url': self._get_neighbor_photo_url(right=True),
-            'in_favorites': in_favorites,
         })
+        
+        if self.request.user.is_authenticated:
+            in_favorites = self.object.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists() or\
+                self.object.album.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists()
+            context.update({'in_favorites': in_favorites})
+            
         return context
 
     def _get_neighbor_photo_url(self, right: bool):
@@ -203,9 +210,13 @@ class PhotoView(DetailView):
                 return get_photo(album_id=self.album.pk, is_private=False)
 
         try:
-            return get_neighbor_photo().get_absolute_url()
+            neighbor_photo = get_neighbor_photo()
         except ObjectDoesNotExist:
             return
+            
+        return reverse('photo', kwargs={'username_slug': self.kwargs['username_slug'],
+                                        'album_slug': self.album.slug,
+                                        'photo_slug': neighbor_photo.slug})
 
 
 class AlbumCreateView(LoginRequiredMixin, CreateView):
@@ -312,7 +323,7 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
         self.object = self.get_object()
         self.photos_formset = PhotosInlineFormset(instance=self.object)
 
-        return super().get(request, *args, **kwargs)
+        return self.render_to_response(self.get_context_data())
 
     def post(self, request, *args, **kwargs):
         if request.user.username_slug != self.kwargs['username_slug']:
@@ -500,7 +511,7 @@ class FavoritesView(LoginRequiredMixin, ListView):
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        return self.model.objects.filter(in_users_favorites__username_slug=self.request.user.username_slug)
+        return self.model.objects.filter(in_users_favorites__username_slug=self.request.user.username_slug).select_related('owner')
 
 
 class FavoritesPhotosView(LoginRequiredMixin, ListView):
@@ -525,7 +536,7 @@ class FavoritesPhotosView(LoginRequiredMixin, ListView):
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        return self.model.objects.filter(in_users_favorites__username_slug=self.request.user.username_slug)
+        return self.model.objects.select_related('album__owner').filter(in_users_favorites__username_slug=self.request.user.username_slug)
 
 
 @login_required

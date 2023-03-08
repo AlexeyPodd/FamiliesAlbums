@@ -22,6 +22,7 @@
                 <h2>{{ photo.title }}</h2>
                 <div class="row">
                     <div class="col-4 pr-1 d-flex align-items-end">
+                        {% if request.user.is_authenticated %}
                         {% if owner_slug == request.user.username_slug %}
                         <a href="{% url 'album_edit' username_slug=owner_slug album_slug=album.slug %}#{{ photo.slug }}" class="btn btn-outline-primary w-100">Edit</a>
                         {% else %}
@@ -30,6 +31,7 @@
                             <input type="hidden" name="next" value="{{ request.path }}">
                             <button type="submit" name="photo" value="{{ photo.slug }}" class="btn btn-outline-primary w-100{% if in_favorites %} disabled" aria-disabled="true"{% else %}"{% endif %}>Add to Favorites</button>
                         </form>
+                        {% endif %}
                         {% endif %}
                     </div>
                     <div class="col-4 px-1">

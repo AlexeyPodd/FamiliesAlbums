@@ -1,10 +1,12 @@
 from django.urls import path
+from django.views.decorators.cache import cache_page
 
+from photoalbums.settings import TEMP_FILES_EXPIRATION_SECONDS
 from .views import *
 
 urlpatterns = [
     path('', MainPageView.as_view(), name='main'),
-    path('about', AboutPageView.as_view(), name='about'),
+    path('about', cache_page(TEMP_FILES_EXPIRATION_SECONDS)(AboutPageView.as_view()), name='about'),
     path('<slug:username_slug>/albums/', UserAlbumsView.as_view(), name='user_albums'),
     path('<slug:username_slug>/create_album/', AlbumCreateView.as_view(), name='album_create'),
     path('<slug:username_slug>/albums/<slug:album_slug>/', AlbumView.as_view(), name='album'),

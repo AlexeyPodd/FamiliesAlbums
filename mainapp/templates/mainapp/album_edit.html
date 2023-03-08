@@ -43,7 +43,7 @@
 
 {{ photos_formset.management_form }}
 
-{% if album.photos_set.all %}
+{% if album.photos_set.exists %}
 <!--First submit button-->
 <div class="d-flex justify-content-center mt-3">
     <button class="btn btn-primary btn-lg w-50" type="submit">{{ button_label }}</button>

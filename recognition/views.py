@@ -20,7 +20,7 @@ from .supporters import RedisSupporter
 from .tasks import recognition_task
 from photoalbums.settings import MEDIA_ROOT, BASE_DIR
 from .utils import set_album_photos_processed
-from .mixin_views import RecognitionMixin
+from .mixin_views import RecognitionMixin, ManualRecognitionMixin
 
 
 @login_required
@@ -90,7 +90,7 @@ class AlbumsRecognitionView(LoginRequiredMixin, ListView):
     paginate_by = 12
 
     def get_queryset(self):
-        queryset = self.model.objects.filter(owner__pk=self.request.user.pk).annotate(
+        queryset = self.model.objects.select_related('miniature').filter(owner__pk=self.request.user.pk).annotate(
             public_photos=Count('photos', filter=Q(photos__is_private=False)),
             processed_photos=Count('photos', filter=(Q(photos__is_private=False) & Q(photos__faces_extracted=True)))
         )
@@ -110,7 +110,8 @@ class AlbumProcessingConfirmView(LoginRequiredMixin, DetailView):
 
         self._check_access_right()
 
-        return super().get(request, *args, **kwargs)
+        context = self.get_context_data(object=self.object)
+        return self.render_to_response(context)
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -213,7 +214,7 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
         return queryset
 
 
-class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
+class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixin, DetailView):
     recognition_stage = 2
     model = Photos
     template_name = 'recognition/verify_frames.html'
@@ -222,7 +223,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, RecognitionMixin, Det
     slug_url_kwarg = 'photo_slug'
 
     def get(self, request, *args, **kwargs):
-        self.album = Albums.objects.get(slug=kwargs['album_slug'])
+        self.album = Albums.objects.select_related('owner').get(slug=kwargs['album_slug'])
         self._get_object_and_make_checks(queryset=self.model.objects.filter(album_id=self.album.pk))
 
         return super().get(request, *args, **kwargs)
@@ -231,12 +232,10 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, RecognitionMixin, Det
         self.album = Albums.objects.select_related('owner').prefetch_related('photos_set').get(slug=kwargs['album_slug'])
         self._get_object_and_make_checks(queryset=self.model.objects.filter(album_id=self.album.pk))
 
+        return super().post(request, *args, **kwargs)
 
-        form = self.get_form()
-        if form.is_valid():
-            return self.form_valid(form)
-        else:
-            return self.form_invalid(form)
+    def get_queryset(self):
+        return self.model.objects.all()
 
     def _check_access_right(self):
         if self.request.user.username_slug != self.album.owner.username_slug or self.object.is_private:
@@ -389,7 +388,7 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView)
         return context
 
 
-class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
+class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMixin, DetailView):
     recognition_stage = 4
     template_name = 'recognition/verify_patterns.html'
     model = Albums
@@ -556,7 +555,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, RecognitionMixin, D
                                                 status="completed")
 
 
-class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
+class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMixin, DetailView):
     recognition_stage = 5
     template_name = 'recognition/group_patterns.html'
     model = Albums
@@ -571,11 +570,7 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
     def post(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
-        form = self.get_form()
-        if form.is_valid():
-            return self.form_valid(form)
-        else:
-            return self.form_invalid(form)
+        return super().post(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -697,7 +692,7 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, RecognitionMixin, Deta
         return context
 
 
-class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
+class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixin, DetailView):
     recognition_stage = 7
     template_name = 'recognition/verify_matches.html'
     model = Albums
@@ -717,11 +712,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, RecognitionMixi
 
         self._get_matches_urls()
 
-        form = self.get_form()
-        if form.is_valid():
-            return self.form_valid(form)
-        else:
-            return self.form_invalid(form)
+        return super().post(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -810,7 +801,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, RecognitionMixi
             return reverse_lazy('save_waiting', kwargs={'album_slug': self.object.slug})
 
 
-class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, DetailView):
+class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionMixin, DetailView):
     recognition_stage = 8
     template_name = 'recognition/manual_matching.html'
     model = Albums
@@ -826,11 +817,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, 
     def post(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
-        form = self.get_form()
-        if form.is_valid():
-            return self.form_valid(form)
-        else:
-            return self.form_invalid(form)
+        return super().post(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -1021,10 +1008,11 @@ class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
         return people
 
     def _get_formset(self):
+        queryset = self._people.all().prefetch_related(None)
         if self.request.method == 'GET':
-            return RenamePeopleFormset(queryset=self._people)
+            return RenamePeopleFormset(queryset=queryset)
         elif self.request.method == 'POST':
-            return RenamePeopleFormset(self.request.POST, queryset=self._people)
+            return RenamePeopleFormset(self.request.POST, queryset=queryset)
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1079,6 +1067,9 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
         set_album_photos_processed(album_pk=self.object.pk, status=True)
 
         return super().get(request, *args, **kwargs)
+        
+    def get_queryset(self):
+        return self.model.objects.prefetch_related('photos_set').select_related('owner').filter(owner__pk=self.request.user.pk)
 
     def _check_photos_processed_and_no_faces_found(self):
         if RedisSupporter.get_finished_status(self.object.pk) != "no_faces":
@@ -1176,12 +1167,13 @@ class RecognizedPersonView(LoginRequiredMixin, FormMixin, ListView):
             'title': f'Recognition - person {self._person.name}',
             'person': self._person,
             'button_label': "Search in other users photos",
+            'patterns_amount': self.object_list.count(),
         })
 
         return context
 
     def _get_person(self):
-        person = People.objects.annotate(
+        person = People.objects.select_related('owner').annotate(
             photos_amount=Count('patterns__faces__photo', distinct=True),
             albums_amount=Count('patterns__faces__photo__album', distinct=True),
         ).get(slug=self.kwargs['person_slug'])

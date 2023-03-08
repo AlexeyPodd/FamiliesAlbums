@@ -46,7 +46,7 @@
                         {% if album.location %}<br>{% else %}</p><p class="card-text">{% endif %}
                         {{ album.date_start|default_if_none:'' }} - {{ album.date_end|default_if_none:'' }}</p>
                         {% endif %}
-                        <a href="{{ album.get_absolute_url }}" class="btn btn-primary w-75">View Album</a>
+                        <a href="{% url 'album' username_slug=album.owner.username_slug album_slug=album.slug %}" class="btn btn-primary w-75">View Album</a>
                         {% with owner=album.owner %}
                         <p>Owner: <a href="{% url 'user_profile' owner.username_slug %}">{{ owner.username }}</a></p>
                         {% endwith %}

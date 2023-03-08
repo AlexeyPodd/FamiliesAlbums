@@ -30,7 +30,7 @@
                         {% else %}
                         </p>
                         {% endif %}
-                        <a href="{{ album.get_absolute_url }}" class="btn btn-primary">View Album</a>
+                        <a href="{% url 'album' username_slug=album.owner.username_slug album_slug=album.slug %}" class="btn btn-primary">View Album</a>
                     </div>
                 </div>
             </div>
