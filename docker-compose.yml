@@ -1,41 +1,57 @@
 version: "3"
 
 services:
+  nginx:
+    restart: always
+    build:
+      context: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./certbot_data/conf:/etc/letsencrypt
+      - ./certbot_data/www:/var/www/certbot
+      - ./media:/var/www/media
+      - ./static:/var/www/static
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+  certbot:
+    image: certbot/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    volumes:
+      - ./certbot_data/conf:/etc/letsencrypt
+      - ./certbot_data/www:/var/www/certbot
   django:
     build: .
     container_name: django
-    command: python3 manage.py runserver 0.0.0.0:8000
+    command: gunicorn -w 3 photoalbums.wsgi --bind 0.0.0.0:8000
     volumes:
-      - .:/usr/src/familie_albums
+      - ./media:/usr/src/family_albums/media
+      - ./static:/usr/src/family_albums/static
     ports:
-      - "8000:8000"
       - "587:587"
-    environment:
-      - DEBAG=1
-      - DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1
-      - CELERY_BROKER=redis://redis:6379/0
-      - CELERY_BACKEND=redis://redis:6379/0
+    env_file: /usr/src/family_albums/.django-celery-env
     depends_on:
       mysql:
         condition: service_healthy
       redis:
         condition: service_started
+    restart: always
   celery:
     build: .
     container_name: celery
     command: sh ./celery_start_script
     volumes:
-      - .:/usr/src/familie_albums
+      - ./media:/usr/src/family_albums/media
+    env_file: /usr/src/family_albums/.django-celery-env
     depends_on:
       - django
       - redis
       - mysql
+    restart: always
   mysql:
     image: mysql
     container_name: mysql
-    environment:
-      MYSQL_DATABASE: 'db_django'
-      MYSQL_ROOT_PASSWORD: 'password'
+    env_file: ./.mysql-env
     healthcheck:
       test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
       timeout: 20s
@@ -46,3 +62,4 @@ services:
   redis:
     container_name: redis
     image: "redis:alpine"
+    restart: always
