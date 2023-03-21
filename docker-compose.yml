@@ -2,34 +2,40 @@ version: "3"
 
 services:
   nginx:
+    container_name: nginx
     restart: always
     build:
       context: ./nginx
+    user: nginx
     ports:
-      - "80:80"
-      - "443:443"
+      - "8000:8080"
+      - "443:8443"
+    depends_on:
+      - django
     volumes:
       - ./certbot_data/conf:/etc/letsencrypt
       - ./certbot_data/www:/var/www/certbot
       - ./media:/var/www/media
       - ./static:/var/www/static
     command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
-  certbot:
-    image: certbot/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-    volumes:
-      - ./certbot_data/conf:/etc/letsencrypt
-      - ./certbot_data/www:/var/www/certbot
+#  certbot:
+#    image: certbot/certbot
+#    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+#    volumes:
+#      - ./certbot_data/conf:/etc/letsencrypt
+#      - ./certbot_data/www:/var/www/certbot
   django:
-    build: .
+    build:
+      context: .
     container_name: django
-    command: gunicorn -w 3 photoalbums.wsgi --bind 0.0.0.0:8000
+    command: gunicorn -w 3 photoalbums.wsgi --bind 0.0.0.0:8000 --timeout 20
     volumes:
       - ./media:/usr/src/family_albums/media
       - ./static:/usr/src/family_albums/static
+      - ./staticfiles:/usr/src/family_albums/staticfiles
     ports:
       - "587:587"
-    env_file: /usr/src/family_albums/.django-celery-env
+    env_file: ./.django-celery-env
     depends_on:
       mysql:
         condition: service_healthy
@@ -37,12 +43,13 @@ services:
         condition: service_started
     restart: always
   celery:
-    build: .
+    build:
+      context: .
     container_name: celery
     command: sh ./celery_start_script
     volumes:
       - ./media:/usr/src/family_albums/media
-    env_file: /usr/src/family_albums/.django-celery-env
+    env_file: ./.django-celery-env
     depends_on:
       - django
       - redis
@@ -50,6 +57,7 @@ services:
     restart: always
   mysql:
     image: mysql
+    user: mysql
     container_name: mysql
     env_file: ./.mysql-env
     healthcheck:
@@ -62,4 +70,5 @@ services:
   redis:
     container_name: redis
     image: "redis:alpine"
+    user: redis
     restart: always

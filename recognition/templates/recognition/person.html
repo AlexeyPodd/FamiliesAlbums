@@ -64,9 +64,11 @@
 
                 <p class="card-text h5">Founded in {{ person.photos_amount }} photo{% if person.photos_amount > 1 %}s{% endif %} of {{ person.albums_amount }} album{% if person.albums_amount > 1 %}s{% endif %}</p>
                 <p class="card-text h5">Formed {{ patterns_amount }} pattern{% if patterns_amount > 1 %}s{% endif %}</p>
+                {% if request.user.username_slug == person.owner.username_slug %}
                 <a href="{% url 'find_people' %}?person={{person.slug}}" class="btn btn-primary btn-lg mt-5 w-100">
                     {{ button_label }}
                 </a>
+                {% endif %}
             </div>
             <div class="col-12 col-lg-4">
             </div>
