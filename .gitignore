@@ -9,4 +9,3 @@ celerybeat-schedule
 .django-celery-env
 staticfiles/*
 __pycache__/
-migrations/

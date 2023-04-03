@@ -13,4 +13,3 @@ nginx/
 celerybeat-schedule
 staticfiles/*
 __pycache__/
-migrations/

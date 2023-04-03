@@ -25,8 +25,7 @@ services:
 #      - ./certbot_data/conf:/etc/letsencrypt
 #      - ./certbot_data/www:/var/www/certbot
   django:
-    build:
-      context: .
+    image: alexey1111/familyalbums
     container_name: django
     command: gunicorn -w 3 photoalbums.wsgi --bind 0.0.0.0:8000 --timeout 20
     volumes:
@@ -43,8 +42,7 @@ services:
         condition: service_started
     restart: always
   celery:
-    build:
-      context: .
+    image: alexey1111/familyalbums
     container_name: celery
     command: sh ./celery_start_script
     volumes:

@@ -148,7 +148,7 @@ class UserProfileView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        if self.request.user.username_slug == self.kwargs.get('username_slug'):
+        if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs.get('username_slug'):
             title = 'My profile'
             context.update({'current_section': 'profile'})
         else:

@@ -2,7 +2,7 @@ FROM nginx
 LABEL maintainer="familyalbums.club"
 
 COPY nginx_default.conf /etc/nginx/conf.d/default.conf
-COPY nginx.conf /etc/ngnix/nginx.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
 # Create directory and set permissions for nginx user
 RUN mkdir -p /var/cache/nginx/client_temp && \
