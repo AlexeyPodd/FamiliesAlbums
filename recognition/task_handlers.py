@@ -7,12 +7,14 @@ from django.db.models import Prefetch
 
 from mainapp.models import Photos, Albums
 from photoalbums.settings import BASE_DIR, FACE_RECOGNITION_TOLERANCE, PATTERN_EQUALITY_TOLERANCE, \
-    MEDIA_ROOT, SEARCH_PEOPLE_LIMIT, TEMP_ROOT
+    SEARCH_PEOPLE_LIMIT, TEMP_ROOT
 
 from .data_classes import FaceData, PatternData, PersonData
 from .models import Faces, Patterns, People, Clusters
+from .redis_interface.task_handlers_api import RedisAPIStage1Handler, RedisAPIStage3Handler, RedisAPIStage6Handler, \
+    RedisAPIStage9Handler, RedisAPISearchHandler
 from .utils import set_album_photos_processed
-from .supporters import DataDeletionSupporter, ManageClustersSupporter, RedisSupporter
+from .supporters import DataDeletionSupporter, ManageClustersSupporter
 
 
 class BaseRecognitionHandler:
@@ -35,15 +37,16 @@ class BaseRecognitionHandler:
         self._save_album_report()
 
     def _save_album_report(self):
-        RedisSupporter.set_stage_and_status(self._album_pk, stage=self.stage, status="completed")
-        RedisSupporter.reset_processed_photos_amount(self._album_pk)
+        self.redisAPI.set_stage(self._album_pk, stage=self.stage)
+        self.redisAPI.set_status(self._album_pk, status="completed")
+        self.redisAPI.reset_processed_photos_amount(self._album_pk)
 
 
 class BaseRecognitionLateStageHandler(BaseRecognitionHandler):
     def _get_new_people_data_from_redis_or_create_person(self):
-        if RedisSupporter.check_any_person_found(self._album_pk):
-            self._new_people = RedisSupporter.get_people_data(self._album_pk)
-        elif RedisSupporter.check_single_pattern_formed(self._album_pk):
+        if self.redisAPI.check_any_person_found(self._album_pk):
+            self._new_people = self.redisAPI.get_people_data(self._album_pk)
+        elif self.redisAPI.check_single_pattern_formed(self._album_pk):
             self._create_person_from_pattern_and_set_it_to_redis()
         else:
             photo_pk = self._get_photo_pk_with_face()
@@ -57,23 +60,23 @@ class BaseRecognitionLateStageHandler(BaseRecognitionHandler):
 
     def _get_photo_pk_with_face(self):
         pks = map(lambda p: p.pk, Photos.objects.filter(album__pk=self._album_pk))
-        return RedisSupporter.get_single_photo_with_one_face(photos_pks=pks)
+        return self.redisAPI.get_single_photo_with_one_face(photos_pks=pks)
 
     def _create_person_from_pattern_and_set_it_to_redis(self):
         # Creating person
-        person_data = RedisSupporter.create_person_from_single_pattern(self._album_pk)
+        person_data = self.redisAPI.create_person_from_single_pattern(self._album_pk)
         self._new_people.append(person_data)
 
         # Setting it to redis
-        RedisSupporter.set_one_person_with_one_pattern(self._album_pk)
+        self.redisAPI.set_one_person_with_one_pattern(self._album_pk)
 
     def _create_person_from_face_and_set_it_to_redis(self, photo_pk):
         # Creating person
-        person_data = RedisSupporter.create_person_from_single_face(photo_pk)
+        person_data = self.redisAPI.create_person_from_single_face(photo_pk)
         self._new_people.append(person_data)
 
         # Setting it to redis
-        RedisSupporter.set_one_person_with_one_pattern_with_one_face(self._album_pk, photo_pk)
+        self.redisAPI.set_one_person_with_one_pattern_with_one_face(self._album_pk, photo_pk)
 
     def _print_first_face(self):
         face = next(iter(next(iter(self._new_people[0]))))
@@ -97,6 +100,7 @@ class FaceSearchingHandler(BaseRecognitionHandler):
     start_message_template = "Starting to process album_pk. Now searching for faces on album\'s photos."
     finish_message_template = "Search for faces on album_pk album\'s photos has been finished."
     stage = 1
+    redisAPI = RedisAPIStage1Handler
 
     def __init__(self, album_pk):
         super().__init__(album_pk)
@@ -117,18 +121,19 @@ class FaceSearchingHandler(BaseRecognitionHandler):
         set_album_photos_processed(album_pk=self._album_pk, status=False)
 
         photos_slugs = [photo.slug for photo in Photos.objects.filter(album__pk=self._album_pk, is_private=False)]
-        RedisSupporter.set_photos_slugs(self._album_pk, photos_slugs)
+        self.redisAPI.set_photos_slugs(self._album_pk, photos_slugs)
 
-        RedisSupporter.set_stage_and_status(self._album_pk, stage=1, status="processing")
-        RedisSupporter.reset_processed_photos_amount(self._album_pk)
+        self.redisAPI.set_stage(self._album_pk, stage=1)
+        self.redisAPI.set_status(self._album_pk, status="processing")
+        self.redisAPI.reset_processed_photos_amount(self._album_pk)
 
     def _face_search_and_save_to_redis(self):
         for photo in Photos.objects.filter(album__pk=self._album_pk, is_private=False):
             image = fr.load_image_file(os.path.join(BASE_DIR, photo.original.url[1:]))
             faces = self._find_faces_on_image(image=image)
-            RedisSupporter.set_photo_faces_data(album_pk=self._album_pk, photo_pk=photo.pk, data=faces)
+            self.redisAPI.set_photo_faces_data(album_pk=self._album_pk, photo_pk=photo.pk, data=faces)
             if not faces:
-                RedisSupporter.delete_photo_slug(self._album_pk, photo.slug)
+                self.redisAPI.delete_photo_slug(self._album_pk, photo.slug)
 
     @staticmethod
     def _find_faces_on_image(image):
@@ -143,6 +148,7 @@ class RelateFacesHandler(BaseRecognitionHandler):
     start_message_template = "Starting to relate founded faces on photos of album album_pk."
     finish_message_template = "Relating faces of album_pk album has been finished."
     stage = 3
+    redisAPI = RedisAPIStage3Handler
 
     def __init__(self, album_pk):
         super().__init__(album_pk)
@@ -167,7 +173,7 @@ class RelateFacesHandler(BaseRecognitionHandler):
 
     def _get_faces_data_from_redis(self):
         for photo in self._queryset:
-            photo_faces = RedisSupporter.get_faces_data_of_photo(photo.pk)
+            photo_faces = self.redisAPI.get_faces_data_of_photo(photo.pk)
             self._data.update({photo.pk: photo_faces})
 
     def _relate_faces_data(self):
@@ -195,7 +201,7 @@ class RelateFacesHandler(BaseRecognitionHandler):
             pattern.find_central_face()
 
     def _save_patterns_data_to_redis(self):
-        RedisSupporter.set_patterns_data(self._album_pk, self._patterns)
+        self.redisAPI.set_patterns_data(self._album_pk, self._patterns)
 
     def _prepare_path(self):
         if self._path is None:
@@ -225,6 +231,7 @@ class ComparingExistingAndNewPeopleHandler(BaseRecognitionLateStageHandler):
     start_message_template = "Starting to compare created people of album album_pk with previously created people."
     finish_message_template = "Comparing people of album_pk album with previously created people has been finished."
     stage = 6
+    redisAPI = RedisAPIStage6Handler
 
     def __init__(self, album_pk):
         super().__init__(album_pk)
@@ -313,7 +320,7 @@ class ComparingExistingAndNewPeopleHandler(BaseRecognitionLateStageHandler):
         return min(dists)
 
     def _save_united_people_data_to_redis(self):
-        RedisSupporter.set_matching_people(self._album_pk, self._pairs)
+        self.redisAPI.set_matching_people(self._album_pk, self._pairs)
 
 
 class SavingAlbumRecognitionDataToDBHandler(BaseRecognitionLateStageHandler):
@@ -321,6 +328,7 @@ class SavingAlbumRecognitionDataToDBHandler(BaseRecognitionLateStageHandler):
     start_message_template = "Starting to save album album_pk recognition data to Data Base."
     finish_message_template = "Recognition data of album_pk album successfully saved to Data Base."
     stage = 9
+    redisAPI = RedisAPIStage9Handler
 
     def __init__(self, album_pk):
         super().__init__(album_pk)
@@ -462,7 +470,7 @@ class SavingAlbumRecognitionDataToDBHandler(BaseRecognitionLateStageHandler):
         return person, person_instance
 
     def _set_finished_and_clear(self):
-        RedisSupporter.set_finished(self._album_pk)
+        self.redisAPI.set_finished(self._album_pk)
         DataDeletionSupporter.clean_after_recognition(self._album_pk)
 
 
@@ -482,6 +490,7 @@ class SimilarPeopleSearchingHandler:
     start_message_template = "Starting to search person person_pk."
     finish_message_template = "Search of person person_pk is finished."
     stage = 0
+    redisAPI = RedisAPISearchHandler
 
     def __init__(self, person_pk):
         self._person_pk = person_pk
@@ -497,7 +506,7 @@ class SimilarPeopleSearchingHandler:
     def handle(self):
         self._owner_pk = People.objects.select_related('owner').get(pk=self._person_pk).owner.pk
         similar_people_pks = self._find_similar_people()
-        RedisSupporter.set_founded_similar_people(person_pk=self._person_pk, pks=similar_people_pks)
+        self.redisAPI.set_founded_similar_people(person_pk=self._person_pk, pks=similar_people_pks)
 
     def _find_similar_people(self):
         person_patterns = Patterns.objects.filter(person__pk=self._person_pk).select_related('central_face')
@@ -510,7 +519,7 @@ class SimilarPeopleSearchingHandler:
                 if nearest_people.setdefault(patt.person, distance) > distance:
                     nearest_people[patt.person] = distance
 
-            RedisSupporter.encrease_patterns_search_amount(self._person_pk)
+            self.redisAPI.encrease_patterns_search_amount(self._person_pk)
 
         list_of_nearest_people = sorted(filter(lambda p: p.pk != self._person_pk and p.owner.pk != self._owner_pk,
                                                nearest_people.keys()), key=lambda k: nearest_people[k])

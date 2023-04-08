@@ -1,9 +1,11 @@
 from django.http import Http404
 
-from recognition.supporters import RedisSupporter
+from recognition.redis_interface.views_api import RedisAPIBaseView
 
 
 class RecognitionMixin:
+    redisAPI = RedisAPIBaseView
+
     def get(self, request, *args, **kwargs):
         context = self.get_context_data(object=self.object)
         return self.render_to_response(context)
@@ -18,13 +20,13 @@ class RecognitionMixin:
             raise Http404
 
     def _check_recognition_stage(self, waiting_task):
-        stage = RedisSupporter.get_stage_or_404(self.object.pk)
+        stage = self.redisAPI.get_stage_or_404(self.object.pk)
 
         if waiting_task:
             if stage != self.recognition_stage:
                 raise Http404
         else:
-            status = RedisSupporter.get_status(self.object.pk)
+            status = self.redisAPI.get_status(self.object.pk)
             if not (stage == self.recognition_stage and status == "processing" or
                     stage == self.recognition_stage - 1 and status == "completed"):
                 raise Http404

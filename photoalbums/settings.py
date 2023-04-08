@@ -51,6 +51,8 @@ INSTALLED_APPS = [
     'accounts.apps.AccountsConfig',
     'mainapp.apps.MainappConfig',
     'recognition.apps.RecognitionConfig',
+    'api_v1.apps.ApiV1Config',
+    'rest_framework',
     'compressor',
     'django_registration',
     'django_celery_beat',

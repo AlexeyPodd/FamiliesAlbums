@@ -1,22 +1,8 @@
 import pickle
-import redis
 
 from mainapp.models import Photos
 from .models import Patterns
 from .data_classes import FaceData, PatternData
-
-
-from photoalbums.settings import REDIS_HOST, REDIS_PORT
-
-
-redis_instance = redis.Redis(host=REDIS_HOST,
-                             port=REDIS_PORT,
-                             db=0,
-                             decode_responses=True)
-redis_instance_raw = redis.Redis(host=REDIS_HOST,
-                                 port=REDIS_PORT,
-                                 db=0,
-                                 decode_responses=False)
 
 
 def set_album_photos_processed(album_pk: int, status: bool):

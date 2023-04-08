@@ -16,7 +16,11 @@ from PIL import Image, ImageDraw, ImageFont
 from mainapp.models import Photos, Albums
 from .forms import *
 from .models import Faces, People, Patterns
-from .supporters import RedisSupporter
+from .redis_interface.functional_api import RedisAPIPhotoDataGetter, RedisAPIStage, RedisAPIStatus, RedisAPIFinished, \
+    RedisAPIPhotoDataChecker, RedisAPISearchSetter
+from .redis_interface.views_api import RedisAPIStageSearchView, RedisAPIStage1View, RedisAPIStage3View, \
+    RedisAPIStage4View, RedisAPIStage2View, RedisAPIStage5View, RedisAPIStage6View, RedisAPIStage7View, \
+    RedisAPIStage8View, RedisAPIStage9View
 from .tasks import recognition_task
 from photoalbums.settings import MEDIA_ROOT, BASE_DIR
 from .utils import set_album_photos_processed
@@ -63,7 +67,7 @@ def return_photo_with_framed_faces(request):
         raise Http404
 
     # Loading faces locations from redis
-    faces_locations = RedisSupporter.get_face_locations_in_photo(photo.pk)
+    faces_locations = RedisAPIPhotoDataGetter.get_face_locations_in_photo(photo.pk)
 
     # Drawing
     image = Image.open(os.path.join(BASE_DIR, photo.original.url[1:]))
@@ -149,7 +153,8 @@ def find_faces_view(request):
     if request.user.username_slug != album.owner.username_slug:
         raise Http404
 
-    RedisSupporter.set_stage_and_status(album_pk=album.pk, stage=0, status="processing")
+    RedisAPIStage.set_stage(album_pk=album.pk, stage=0)
+    RedisAPIStatus.set_status(album_pk=album.pk, status="processing")
     recognition_task.delay(album.pk, 1)
 
     return redirect('frames_waiting', album_slug=album_slug)
@@ -161,31 +166,32 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
     template_name = 'recognition/waiting_frames.html'
+    redisAPI = RedisAPIStage1View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
         if self._photos_processed_and_no_faces_found():
-            RedisSupporter.set_no_faces(album_pk=self.object.pk)
+            self.redisAPI.set_no_faces(album_pk=self.object.pk)
             recognition_task.delay(self.object.pk, -1)
             return redirect('no_faces', album_slug=self.object.slug)
 
-        self._status = RedisSupporter.get_status(self.object.pk)
+        self._status = self.redisAPI.get_status(self.object.pk)
         if self._status == "completed":
             return redirect('verify_frames', album_slug=self.object.slug,
-                            photo_slug=RedisSupporter.get_first_photo_slug(self.object.pk))
+                            photo_slug=self.redisAPI.get_first_photo_slug(self.object.pk))
 
         return super().get(request, *args, **kwargs)
 
     def _check_recognition_stage(self, waiting_task=True):
-        current_stage = RedisSupporter.get_stage_or_404(self.object.pk)
+        current_stage = self.redisAPI.get_stage_or_404(self.object.pk)
         if current_stage not in (self.recognition_stage - 1, self.recognition_stage):
             raise Http404
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        number_of_processed_photos = RedisSupporter.get_processed_photos_amount(self.object.pk)
+        number_of_processed_photos = self.redisAPI.get_processed_photos_amount(self.object.pk)
         instructions = [
             "We are searching for faces on photos of this album.",
             "This may take a minute or two.",
@@ -204,7 +210,7 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
 
     def _photos_processed_and_no_faces_found(self):
         pks = tuple(map(lambda p: p.pk, self.object.photos_set.all()))
-        return all(map(RedisSupporter.photo_processed_and_no_faces_found, pks))
+        return all(map(self.redisAPI.photo_processed_and_no_faces_found, pks))
 
     def get_queryset(self):
         queryset = self.model.objects.select_related('owner').filter(owner__pk=self.request.user.pk).annotate(
@@ -221,6 +227,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
     context_object_name = 'photo'
     form_class = VerifyFramesForm
     slug_url_kwarg = 'photo_slug'
+    redisAPI = RedisAPIStage2View
 
     def get(self, request, *args, **kwargs):
         self.album = Albums.objects.select_related('owner').get(slug=kwargs['album_slug'])
@@ -242,27 +249,27 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
             raise Http404
 
     def _check_recognition_stage(self, waiting_task=False):
-        stage = RedisSupporter.get_stage_or_404(self.album.pk)
-        status = RedisSupporter.get_status(self.album.pk)
+        stage = self.redisAPI.get_stage_or_404(self.album.pk)
+        status = self.redisAPI.get_status(self.album.pk)
         if not (stage == self.recognition_stage and status == "processing" or
                 stage == self.recognition_stage - 1 and status == "completed"):
             raise Http404
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        kwargs.update({'faces_amount': RedisSupporter.get_faces_amount_in_photo(self.object.pk)})
+        kwargs.update({'faces_amount': self.redisAPI.get_faces_amount_in_photo(self.object.pk)})
         return kwargs
 
     def form_valid(self, form):
         self._delete_wrong_data(form)
-        RedisSupporter.renumber_faces_of_photo(self.object.pk)
+        self.redisAPI.renumber_faces_of_photo(self.object.pk)
         self._set_correct_status()
 
-        self._is_last_photo = self.object.slug == RedisSupporter.get_last_photo_slug(self.album.pk)
+        self._is_last_photo = self.object.slug == self.redisAPI.get_last_photo_slug(self.album.pk)
         if self._is_last_photo:
             self._count_verified_faces()
             if self._faces_amount == 0:
-                RedisSupporter.set_no_faces(self.album.pk)
+                self.redisAPI.set_no_faces(self.album.pk)
                 recognition_task.delay(self.album.pk, -1)
             else:
                 self._get_next_stage()
@@ -273,7 +280,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
     def _delete_wrong_data(self, form):
         for name, to_delete in form.cleaned_data.items():
             if to_delete:
-                RedisSupporter.del_face(self.object.pk, name)
+                self.redisAPI.del_face(self.object.pk, name)
 
     def _get_next_stage(self):
         another_album_processed = Faces.objects.filter(
@@ -288,17 +295,17 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
             self._next_stage = 3
 
     def _set_correct_status(self):
-        RedisSupporter.register_photo_processed(self.album.pk)
+        self.redisAPI.register_photo_processed(self.album.pk)
 
-        if RedisSupporter.get_stage(self.album.pk) == self.recognition_stage - 1 and \
-                self.object.slug == RedisSupporter.get_first_photo_slug(self.album.pk):
-            RedisSupporter.set_stage_and_status(album_pk=self.album.pk,
-                                                stage=self.recognition_stage, status="processing")
-        if RedisSupporter.get_stage(self.album.pk) == self.recognition_stage and \
-                self.object.slug == RedisSupporter.get_last_photo_slug(self.album.pk):
-            RedisSupporter.set_stage_and_status(album_pk=self.album.pk,
-                                                stage=self.recognition_stage, status="completed")
-            RedisSupporter.reset_processed_photos_amount(self.album.pk)
+        if self.redisAPI.get_stage(self.album.pk) == self.recognition_stage - 1 and \
+                self.object.slug == self.redisAPI.get_first_photo_slug(self.album.pk):
+            self.redisAPI.set_stage(album_pk=self.album.pk, stage=self.recognition_stage)
+            self.redisAPI.set_status(album_pk=self.album.pk, status="processing")
+        if self.redisAPI.get_stage(self.album.pk) == self.recognition_stage and \
+                self.object.slug == self.redisAPI.get_last_photo_slug(self.album.pk):
+            self.redisAPI.set_stage(album_pk=self.album.pk, stage=self.recognition_stage)
+            self.redisAPI.set_status(album_pk=self.album.pk, status="completed")
+            self.redisAPI.reset_processed_photos_amount(self.album.pk)
 
     def get_success_url(self):
         if self._is_last_photo:
@@ -314,17 +321,17 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
             else:
                 return reverse_lazy('patterns_waiting', kwargs={'album_slug': self.album.slug})
         else:
-            next_photo_slug = RedisSupporter.get_next_photo_slug(album_pk=self.album.pk,
+            next_photo_slug = self.redisAPI.get_next_photo_slug(album_pk=self.album.pk,
                                                                  current_photo_slug=self.object.slug)
             return reverse_lazy('verify_frames', kwargs={'album_slug': self.album.slug, 'photo_slug': next_photo_slug})
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        current_photo_number = RedisSupporter.get_processed_photos_amount(self.album.pk) + 1
-        photos_with_faces = RedisSupporter.get_photo_slugs_amount(self.album.pk)
+        current_photo_number = self.redisAPI.get_processed_photos_amount(self.album.pk) + 1
+        photos_with_faces = self.redisAPI.get_photo_slugs_amount(self.album.pk)
         instructions = ["Please mark the faces of children under 10 and objects that are not faces."]
-        if self.object.slug == RedisSupporter.get_last_photo_slug(self.album.pk):
+        if self.object.slug == self.redisAPI.get_last_photo_slug(self.album.pk):
             button_label = "Next stage"
         else:
             button_label = "Next photo"
@@ -340,13 +347,14 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
         return context
 
     def _start_celery_task(self, next_stage):
-        RedisSupporter.set_stage_and_status(album_pk=self.album.pk, stage=next_stage, status="processing")
+        self.redisAPI.set_stage(album_pk=self.album.pk, stage=next_stage)
+        self.redisAPI.set_status(album_pk=self.album.pk, status="processing")
         recognition_task.delay(self.album.pk, next_stage)
 
     def _count_verified_faces(self):
         count = 0
         for pk in map(lambda p: p.pk, self.album.photos_set.all()):
-            if RedisSupporter.is_face_in_photo(photo_pk=pk, face_index=1):
+            if self.redisAPI.is_face_in_photo(photo_pk=pk, face_index=1):
                 count += 1
         self._faces_amount = count
 
@@ -357,10 +365,11 @@ class AlbumPatternsWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView)
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
     template_name = 'recognition/base/waiting_base.html'
+    redisAPI = RedisAPIStage3View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks(waiting_task=True)
-        self.status = RedisSupporter.get_status(self.object.pk)
+        self.status = self.redisAPI.get_status(self.object.pk)
 
         if self.status == "completed":
             return redirect('verify_patterns', album_slug=self.object.slug)
@@ -395,12 +404,13 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
     slug_url_kwarg = 'album_slug'
     form_class = BaseVerifyPatternForm
     context_object_name = 'album'
+    redisAPI = RedisAPIStage4View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
-        self._faces_amounts = RedisSupporter.get_album_faces_amounts(self.object.pk)
-        self._verified_patterns_amount = RedisSupporter.get_verified_patterns_amount(self.object.pk)
+        self._faces_amounts = self.redisAPI.get_album_faces_amounts(self.object.pk)
+        self._verified_patterns_amount = self.redisAPI.get_verified_patterns_amount(self.object.pk)
 
         # If all patterns have only one face each
         if all(map(lambda x: x == 1, self._faces_amounts[self._verified_patterns_amount:])):
@@ -419,8 +429,8 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
     def post(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
-        self._faces_amounts = RedisSupporter.get_album_faces_amounts(self.object.pk)
-        self._verified_patterns_amount = RedisSupporter.get_verified_patterns_amount(self.object.pk)
+        self._faces_amounts = self.redisAPI.get_album_faces_amounts(self.object.pk)
+        self._verified_patterns_amount = self.redisAPI.get_verified_patterns_amount(self.object.pk)
 
         VerifyPatternFormset = formset_factory(self.form_class,
                                                formset=BaseVerifyPatternFormset,
@@ -436,8 +446,8 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
             return self.form_invalid(form)
 
     def _prepare_to_redirect_to_next_stage(self):
-        RedisSupporter.register_verified_patterns(self.object.pk, len(self._faces_amounts))
-        RedisSupporter.set_single_face_central(album_pk=self.object.pk, total_patterns_amount=len(self._faces_amounts),
+        self.redisAPI.register_verified_patterns(self.object.pk, len(self._faces_amounts))
+        self.redisAPI.set_single_face_central(album_pk=self.object.pk, total_patterns_amount=len(self._faces_amounts),
                                                skip=self._verified_patterns_amount)
         self._set_correct_status(all_patterns_have_single_faces=True)
 
@@ -466,7 +476,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
         self._renumber_patterns_faces_data_and_files(patterns_amount=patterns_amount,
                                                      patterns_dir=path)
         self._recalculate_patterns_centers(old_patterns_amount)
-        RedisSupporter.register_verified_patterns(self.object.pk, old_patterns_amount)
+        self.redisAPI.register_verified_patterns(self.object.pk, old_patterns_amount)
         self._set_correct_status()
         self._another_album_processed = Faces.objects.filter(
             photo__album__owner__username_slug=self.object.owner.username_slug,
@@ -477,14 +487,15 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
         return super().form_valid(form)
 
     def _start_celery_task(self, next_stage):
-        RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=next_stage, status="processing")
+        self.redisAPI.set_stage(album_pk=self.object.pk, stage=next_stage)
+        self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
         recognition_task.delay(self.object.pk, next_stage)
 
     def get_success_url(self):
         if self.formset.has_changed():
             return reverse_lazy('verify_patterns', kwargs={'album_slug': self.object.slug})
         else:
-            if RedisSupporter.get_verified_patterns_amount(self.object.pk) == 1:
+            if self.redisAPI.get_verified_patterns_amount(self.object.pk) == 1:
                 if self._another_album_processed:
                     return reverse_lazy('people_waiting', kwargs={'album_slug': self.object.slug})
                 else:
@@ -502,12 +513,12 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
 
             if faces_to_remove:
                 patterns_amount += 1
-                faces_amount = RedisSupporter.get_pattern_faces_amount(self.object.pk, i)
-                RedisSupporter.set_pattern_faces_amount(album_pk=self.object.pk, pattern_index=patterns_amount,
+                faces_amount = self.redisAPI.get_pattern_faces_amount(self.object.pk, i)
+                self.redisAPI.set_pattern_faces_amount(album_pk=self.object.pk, pattern_index=patterns_amount,
                                                         faces_amount=faces_amount)
                 for k, face_name in enumerate(faces_to_remove):
                     # Moving face's data in redis
-                    RedisSupporter.move_face_data(album_pk=self.object.pk, face_name=face_name,
+                    self.redisAPI.move_face_data(album_pk=self.object.pk, face_name=face_name,
                                                   from_pattern=i, to_pattern=patterns_amount)
 
                     # Moving face image in temp directory
@@ -521,12 +532,12 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
 
     def _renumber_patterns_faces_data_and_files(self, patterns_amount, patterns_dir):
         for i in range(1, patterns_amount + 1):
-            faces_amount = RedisSupporter.get_pattern_faces_amount(self.object.pk, i)
+            faces_amount = self.redisAPI.get_pattern_faces_amount(self.object.pk, i)
 
             # Renumbering files
             count = 0
             for j in range(1, faces_amount + 1):
-                if RedisSupporter.is_face_in_pattern(self.object.pk, face_index=j, pattern_index=i):
+                if self.redisAPI.is_face_in_pattern(self.object.pk, face_index=j, pattern_index=i):
                     count += 1
                     if count != j:
                         old_path = os.path.join(patterns_dir, str(i), f"{j}.jpg")
@@ -534,7 +545,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
                         os.replace(old_path, new_path)
 
             # Renumbering redis data
-            RedisSupporter.renumber_faces_in_patterns(album_pk=self.object.pk, pattern_index=i,
+            self.redisAPI.renumber_faces_in_patterns(album_pk=self.object.pk, pattern_index=i,
                                                       faces_amount=faces_amount)
 
     def _recalculate_patterns_centers(self, verified_patterns_amount):
@@ -542,17 +553,17 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
             # If pattern was not verified previously, but did now;
             # and it is not have one face (form wouldn't add fields)
             if self.formset.forms[i-1].fields:
-                RedisSupporter.recalculate_pattern_center(self.object.pk, i)
+                self.redisAPI.recalculate_pattern_center(self.object.pk, i)
 
     def _set_correct_status(self, all_patterns_have_single_faces=False):
-        if RedisSupporter.get_stage(self.object.pk) == self.recognition_stage - 1:
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage,
-                                                status="processing")
+        if self.redisAPI.get_stage(self.object.pk) == self.recognition_stage - 1:
+            self.redisAPI.set_stage(album_pk=self.object.pk, stage=self.recognition_stage)
+            self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
 
-        if RedisSupporter.get_stage(self.object.pk) == self.recognition_stage and \
+        if self.redisAPI.get_stage(self.object.pk) == self.recognition_stage and \
                 (all_patterns_have_single_faces or not self.formset.has_changed()):
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage,
-                                                status="completed")
+            self.redisAPI.set_stage(album_pk=self.object.pk, stage=self.recognition_stage)
+            self.redisAPI.set_status(album_pk=self.object.pk, status="completed")
 
 
 class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMixin, DetailView):
@@ -562,6 +573,7 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMix
     slug_url_kwarg = 'album_slug'
     form_class = GroupPatternsForm
     context_object_name = 'album'
+    redisAPI = RedisAPIStage5View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
@@ -590,14 +602,14 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMix
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        self._single_patterns = RedisSupporter.get_indexes_of_single_patterns(self.object.pk)
+        self._single_patterns = self.redisAPI.get_indexes_of_single_patterns(self.object.pk)
         kwargs.update({'single_patterns': self._single_patterns,
                        'album_pk': self.object.pk})
         return kwargs
 
     def form_valid(self, form):
         self._group_patterns_into_people(form)
-        self._single_patterns = RedisSupporter.get_indexes_of_single_patterns(self.object.pk)
+        self._single_patterns = self.redisAPI.get_indexes_of_single_patterns(self.object.pk)
         if not self._single_patterns:
             self._another_album_processed = Faces.objects.filter(
                 photo__album__owner__username_slug=self.object.owner.username_slug,
@@ -610,32 +622,36 @@ class AlbumGroupPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMix
 
     def _group_patterns_into_people(self, form):
         if any(form.cleaned_data.values()):
-            new_person_number = RedisSupporter.encrease_and_get_people_amount(self.object.pk)
+            new_person_number = self.redisAPI.encrease_and_get_people_amount(self.object.pk)
             count = 0
             for field_name, to_group in form.cleaned_data.items():
                 if to_group:
                     count += 1
-                    RedisSupporter.set_pattern_to_person(album_pk=self.object.pk,
-                                                         pattern_name=field_name,
-                                                         pattern_number_in_person=count,
-                                                         person_number=new_person_number)
+                    self.redisAPI.set_pattern_to_person(album_pk=self.object.pk,
+                                                        pattern_name=field_name,
+                                                        pattern_number_in_person=count,
+                                                        person_number=new_person_number)
         else:
             for field_name in form.cleaned_data.keys():
-                RedisSupporter.set_created_person(album_pk=self.object.pk, pattern_name=field_name)
+                self.redisAPI.set_created_person(album_pk=self.object.pk, pattern_name=field_name)
 
     def _set_correct_status(self, form):
-        if RedisSupporter.get_stage(self.object.pk) == self.recognition_stage - 1:
-            RedisSupporter.set_stage_and_status(self.object.pk, stage=self.recognition_stage, status="processing")
+        if self.redisAPI.get_stage(self.object.pk) == self.recognition_stage - 1:
+            self.redisAPI.set_stage(self.object.pk, stage=self.recognition_stage)
+            self.redisAPI.set_status(self.object.pk, status="processing")
 
-        if RedisSupporter.get_stage(self.object.pk) == self.recognition_stage and \
+        if self.redisAPI.get_stage(self.object.pk) == self.recognition_stage and \
                 not any(form.cleaned_data.values()):
             if self._another_album_processed:
-                RedisSupporter.set_stage_and_status(self.object.pk, stage=self.recognition_stage+1, status="processing")
+                self.redisAPI.set_stage(self.object.pk, stage=self.recognition_stage + 1)
+                self.redisAPI.set_status(self.object.pk, status="processing")
             else:
-                RedisSupporter.set_stage_and_status(self.object.pk, stage=9, status="processing")
+                self.redisAPI.set_stage(self.object.pk, stage=9)
+                self.redisAPI.set_status(self.object.pk, status="processing")
 
     def _start_celery_task(self, next_stage):
-        RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=next_stage, status="processing")
+        self.redisAPI.set_stage(album_pk=self.object.pk, stage=next_stage)
+        self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
         recognition_task.delay(self.object.pk, next_stage)
 
     def get_success_url(self):
@@ -654,19 +670,20 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, RecognitionMixin, Deta
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
     template_name = 'recognition/base/waiting_base.html'
+    redisAPI = RedisAPIStage6View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks(waiting_task=True)
 
-        self.status = RedisSupporter.get_status(self.object.pk)
-        self._any_tech_matches = RedisSupporter.check_any_tech_matches(self.object.pk)
+        self.status = self.redisAPI.get_status(self.object.pk)
+        self._any_tech_matches = self.redisAPI.check_any_tech_matches(self.object.pk)
 
         if self.status == 'completed':
             if self._any_tech_matches:
                 return redirect('verify_matches', album_slug=self.object.slug)
             else:
-                RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage + 1,
-                                                    status='completed')
+                self.redisAPI.set_stage(album_pk=self.object.pk, stage=self.recognition_stage + 1)
+                self.redisAPI.set_status(album_pk=self.object.pk, status='completed')
                 return redirect('manual_matching', album_slug=self.object.slug)
 
         return super().get(request, *args, **kwargs)
@@ -699,6 +716,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
     slug_url_kwarg = 'album_slug'
     form_class = VarifyMatchesForm
     context_object_name = 'album'
+    redisAPI = RedisAPIStage7View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
@@ -723,11 +741,11 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
 
     def _get_matches_urls(self):
         # Getting index of new person and pk of old person in matches
-        old_people_pks, new_people_inds = RedisSupporter.get_matching_people(self.object.pk)
+        old_people_pks, new_people_inds = self.redisAPI.get_matching_people(self.object.pk)
 
         # Getting urls of first faces of first patterns of each person
         # new people
-        patt_inds = RedisSupporter.get_first_patterns_indexes_of_people(self.object.pk, new_people_inds)
+        patt_inds = self.redisAPI.get_first_patterns_indexes_of_people(self.object.pk, new_people_inds)
         face_urls = [f"/media/temp_photos/album_{self.object.pk}/patterns/{x}/1.jpg" for x in patt_inds]
 
         # old people
@@ -769,22 +787,24 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
         for pair, to_delete in form.cleaned_data.items():
             if not to_delete:
                 _, new_per_ind, old_per_pk = pair.split('_')
-                RedisSupporter.set_verified_pair(self.object.pk, new_per_ind, old_per_pk)
+                self.redisAPI.set_verified_pair(self.object.pk, new_per_ind, old_per_pk)
 
     def _set_correct_status(self):
         if not self._new_singe_people_present or not self._old_singe_people_present:
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=9, status="processing")
+            self.redisAPI.set_stage(album_pk=self.object.pk, stage=9)
+            self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
         else:
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=7, status="completed")
+            self.redisAPI.set_stage(album_pk=self.object.pk, stage=7)
+            self.redisAPI.set_status(album_pk=self.object.pk, status="completed")
 
     def _check_new_single_people(self):
-        self._new_singe_people_present = RedisSupporter.check_existing_new_single_people(album_pk=self.object.pk)
+        self._new_singe_people_present = self.redisAPI.check_existing_new_single_people(album_pk=self.object.pk)
 
     def _check_old_single_people(self):
         queryset = People.objects.filter(owner__pk=self.object.owner.pk)
 
         # Collecting already paired people with created people of this album
-        paired = RedisSupporter.get_old_paired_people(self.object.pk)
+        paired = self.redisAPI.get_old_paired_people(self.object.pk)
 
         # Iterating through people, filtering already paired
         for person in queryset:
@@ -808,6 +828,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
     slug_url_kwarg = 'album_slug'
     form_class = ManualMatchingForm
     context_object_name = 'album'
+    redisAPI = RedisAPIStage8View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
@@ -822,7 +843,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs.update({
-            'new_ppl': RedisSupporter.get_new_unpaired_people(self.object.pk),
+            'new_ppl': self.redisAPI.get_new_unpaired_people(self.object.pk),
             'old_ppl': self._get_old_ppl(),
         })
         return kwargs
@@ -846,7 +867,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
         queryset = People.objects.prefetch_related('patterns_set__faces_set').filter(owner__pk=self.object.owner.pk)
 
         # Collecting already paired people with created people of this album
-        paired = RedisSupporter.get_old_paired_people(self.object.pk)
+        paired = self.redisAPI.get_old_paired_people(self.object.pk)
 
         # Taking face image url of one of the faces of person,
         # if it is not already paired with one of people from this album
@@ -878,10 +899,10 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
     def _register_new_pair_to_redis(self, form):
         new_person_ind = form.cleaned_data.get('new_person')
         old_person_pk = form.cleaned_data.get('old_person')
-        RedisSupporter.set_new_pair(album_pk=self.object.pk, new_person_ind=new_person_ind, old_person_pk=old_person_pk)
+        self.redisAPI.set_new_pair(album_pk=self.object.pk, new_person_ind=new_person_ind, old_person_pk=old_person_pk)
 
     def _check_another_pairing_possible(self):
-        self._new_singe_people_present = RedisSupporter.check_existing_new_single_people(self.object.pk)
+        self._new_singe_people_present = self.redisAPI.check_existing_new_single_people(self.object.pk)
         self._old_singe_people_present = self._check_old_single_people()
         if not self._new_singe_people_present or not self._old_singe_people_present:
             self._done = True
@@ -890,7 +911,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
         queryset = People.objects.filter(owner__pk=self.object.owner.pk)
 
         # Collecting already paired people with created people of this album
-        paired = RedisSupporter.get_old_paired_people(self.object.pk)
+        paired = self.redisAPI.get_old_paired_people(self.object.pk)
 
         # Iterating through people, filtering already paired
         for person in queryset:
@@ -907,11 +928,11 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
 
     def _set_correct_status(self):
         if self._done:
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage + 1,
-                                                status="processing")
+            self.redisAPI.set_stage(album_pk=self.object.pk, stage=self.recognition_stage + 1)
+            self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
         else:
-            RedisSupporter.set_stage_and_status(album_pk=self.object.pk, stage=self.recognition_stage,
-                                                status="processing")
+            self.redisAPI.set_stage(album_pk=self.object.pk, stage=self.recognition_stage)
+            self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
 
 
 class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
@@ -920,11 +941,12 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
     context_object_name = 'album'
     slug_url_kwarg = 'album_slug'
     template_name = 'recognition/base/waiting_base.html'
+    redisAPI = RedisAPIStage9View
 
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks(waiting_task=True)
 
-        self._status = RedisSupporter.get_status_or_completed(self.object.pk)
+        self._status = self.redisAPI.get_status_or_completed(self.object.pk)
         if self._status == 'completed':
             return redirect('rename_people', album_slug=self.object.slug)
 
@@ -932,9 +954,9 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
 
     def _check_recognition_stage(self, waiting_task=True):
         try:
-            current_stage = RedisSupporter.get_stage(self.object.pk)
+            current_stage = self.redisAPI.get_stage(self.object.pk)
         except TypeError:
-            if RedisSupporter.get_finished_status(self.object.pk) != '1':
+            if self.redisAPI.get_finished_status(self.object.pk) != '1':
                 raise Http404
         else:
             if current_stage != self.recognition_stage:
@@ -985,11 +1007,11 @@ class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
             return self.form_invalid(form)
 
     def _check_recognition_stage(self, waiting_task):
-        if RedisSupporter.get_finished_status(self.object.pk) != '1':
+        if RedisAPIFinished.get_finished_status(self.object.pk) != '1':
             raise Http404
 
         try:
-            RedisSupporter.get_stage(self.object.pk)
+            RedisAPIStage.get_stage(self.object.pk)
         except TypeError:
             pass
         else:
@@ -1072,7 +1094,7 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
         return self.model.objects.prefetch_related('photos_set').select_related('owner').filter(owner__pk=self.request.user.pk)
 
     def _check_photos_processed_and_no_faces_found(self):
-        if RedisSupporter.get_finished_status(self.object.pk) != "no_faces":
+        if RedisAPIFinished.get_finished_status(self.object.pk) != "no_faces":
             raise Http404
 
         if self._album_processed_and_some_faces_found():
@@ -1080,7 +1102,7 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
 
     def _album_processed_and_some_faces_found(self):
         pks = tuple(map(lambda p: p.pk, self.object.photos_set.all()))
-        return any(map(RedisSupporter.photo_processed_and_some_faces_found, pks))
+        return any(map(RedisAPIPhotoDataChecker.photo_processed_and_some_faces_found, pks))
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1196,7 +1218,7 @@ def find_people_view(request):
     if request.user.pk != person.owner.pk:
         raise Http404
 
-    RedisSupporter.prepare_to_search(person.pk)
+    RedisAPISearchSetter.prepare_to_search(person.pk)
     recognition_task.delay(person.pk, 0)
 
     response = redirect('search_people')
@@ -1209,6 +1231,7 @@ class SearchPeopleView(LoginRequiredMixin, ListView):
     template_name = 'recognition/search.html'
     model = People
     context_object_name = 'founded_people'
+    redisAPI = RedisAPIStageSearchView
 
     def get(self, request, *args, **kwargs):
         person_slug = request.GET.get('person')
@@ -1221,15 +1244,15 @@ class SearchPeopleView(LoginRequiredMixin, ListView):
             raise Http404
 
         try:
-            RedisSupporter.get_searched_patterns_amount(self._person.pk)
+            self.redisAPI.get_searched_patterns_amount(self._person.pk)
         except TypeError:
-            if not RedisSupporter.get_founded_similar_people(self._person.pk):
+            if not self.redisAPI.get_founded_similar_people(self._person.pk):
                 raise Http404
 
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        nearest_people_pks = RedisSupporter.get_founded_similar_people(self._person.pk)
+        nearest_people_pks = self.redisAPI.get_founded_similar_people(self._person.pk)
         queryset = People.objects.prefetch_related(
             'patterns_set__faces_set',
         ).select_related(
@@ -1248,7 +1271,7 @@ class SearchPeopleView(LoginRequiredMixin, ListView):
 
         total_patterns_amount = self._person.patterns_set.count()
         try:
-            patterns_searched_amount = RedisSupporter.get_searched_patterns_amount(self._person.pk)
+            patterns_searched_amount = self.redisAPI.get_searched_patterns_amount(self._person.pk)
         except TypeError:
             patterns_searched_amount = total_patterns_amount
 

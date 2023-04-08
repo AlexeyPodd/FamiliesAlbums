@@ -1,23 +1,23 @@
 version: "3"
 
 services:
-  nginx:
-    container_name: nginx
-    restart: always
-    build:
-      context: ./nginx
-    user: nginx
-    ports:
-      - "80:8080"
-      - "443:8443"
-    depends_on:
-      - django
-    volumes:
-      - ./certbot_data/conf:/etc/letsencrypt
-      - ./certbot_data/www:/var/www/certbot
-      - ./media:/var/www/media
-      - ./static:/var/www/static
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+#  nginx:
+#    container_name: nginx
+#    restart: always
+#    build:
+#      context: ./nginx
+#    user: nginx
+#    ports:
+#      - "80:8080"
+#      - "443:8443"
+#    depends_on:
+#      - django
+#    volumes:
+#      - ./certbot_data/conf:/etc/letsencrypt
+#      - ./certbot_data/www:/var/www/certbot
+#      - ./media:/var/www/media
+#      - ./static:/var/www/static
+#    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
 #  certbot:
 #    image: certbot/certbot
 #    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
@@ -27,11 +27,13 @@ services:
   django:
     image: alexey1111/familyalbums
     container_name: django
-    command: gunicorn -w 3 photoalbums.wsgi --bind 0.0.0.0:8000 --timeout 20
+    command: python manage.py runserver 0.0.0.0:8000
+#     command: gunicorn -w 3 photoalbums.wsgi --bind 0.0.0.0:8000 --timeout 20
     volumes:
-      - ./media:/usr/src/family_albums/media
-      - ./static:/usr/src/family_albums/static
-      - ./staticfiles:/usr/src/family_albums/staticfiles
+      - /home/alex/django/Photoalbums/photoalbums/:/usr/src/family_albums
+#       - ./media:/usr/src/family_albums/media
+#       - ./static:/usr/src/family_albums/static
+#       - ./staticfiles:/usr/src/family_albums/staticfiles
     ports:
       - "587:587"
     env_file: ./.django-celery-env

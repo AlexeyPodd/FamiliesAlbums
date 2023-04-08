@@ -4,7 +4,8 @@ from celery.utils.log import get_task_logger
 from celery import shared_task
 
 from photoalbums.settings import TEMP_ROOT
-from .supporters import RedisSupporter, DataDeletionSupporter
+from .redis_interface.functional_api import RedisAPIAlbumDataChecker
+from .supporters import DataDeletionSupporter
 from .task_handlers import FaceSearchingHandler, RelateFacesHandler, ComparingExistingAndNewPeopleHandler, \
     SavingAlbumRecognitionDataToDBHandler, ClearTempDataHandler, SimilarPeopleSearchingHandler
 
@@ -33,7 +34,7 @@ def clear_cache_and_delete_expired_temp_files():
     logger.info("Cache clearing and deletion of expire temp files started")
     temp_directories = os.listdir(TEMP_ROOT)
     for directory_name in temp_directories:
-        if not RedisSupporter.check_album_in_processing(directory_name):
+        if not RedisAPIAlbumDataChecker.check_album_in_processing(directory_name):
             DataDeletionSupporter.delete_temp_directory(directory_name)
 
     DataDeletionSupporter.clear_cache()

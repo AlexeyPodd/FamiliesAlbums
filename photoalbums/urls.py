@@ -25,6 +25,8 @@ urlpatterns = [
     path('', include('mainapp.urls')),
     path('accounts/', include('accounts.urls')),
     path('recognition/', include('recognition.urls')),
+    path('api/v1/', include('api_v1.urls')),
+    path('api/accounts/', include('rest_framework.urls')),
 ]
 
 if settings.DEBUG:
