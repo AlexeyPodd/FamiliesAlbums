@@ -94,4 +94,4 @@ Redis stores the following keys:
 
 **Searching for similar people**:
 1. person_{pk}_processed_patterns_amount: int
-2. f"nearest_people_to_{pk}": list: int
+2. nearest_people_to_{pk}: list: int

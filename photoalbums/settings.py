@@ -24,20 +24,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = bool(int(os.environ.get('DEBUG', 0)))
+DEBUG = True
+# DEBUG = bool(int(os.environ.get('DEBUG', 0)))
 
-ALLOWED_HOSTS = []
-ALLOWED_HOSTS.extend(filter(None, os.environ.get('ALLOWED_HOSTS', '').split()))
+ALLOWED_HOSTS = ['127.0.0.1']
+# ALLOWED_HOSTS.extend(filter(None, os.environ.get('ALLOWED_HOSTS', '').split()))
 
-CSRF_TRUSTED_ORIGINS = []
-CSRF_TRUSTED_ORIGINS.extend(map(lambda host: f'http://{host}', ALLOWED_HOSTS))
-CSRF_TRUSTED_ORIGINS.extend(map(lambda host: f'https://{host}', ALLOWED_HOSTS))
+CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000']
+# CSRF_TRUSTED_ORIGINS.extend(map(lambda host: f'http://{host}', ALLOWED_HOSTS))
+# CSRF_TRUSTED_ORIGINS.extend(map(lambda host: f'https://{host}', ALLOWED_HOSTS))
 
-# SSL settings
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = True
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+# # SSL settings
+# SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# SECURE_SSL_REDIRECT = True
+# SESSION_COOKIE_SECURE = True
+# CSRF_COOKIE_SECURE = True
 
 # Application definition
 INSTALLED_APPS = [
@@ -237,3 +238,11 @@ SEARCH_PEOPLE_LIMIT = 20
 #
 #     hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
 #     INTERNAL_IPS = [ip[: ip.rfind(".")] + ".1" for ip in ips] + ["127.0.0.1", "10.0.2.2"]
+
+
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ]
+}

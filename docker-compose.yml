@@ -35,6 +35,7 @@ services:
 #       - ./static:/usr/src/family_albums/static
 #       - ./staticfiles:/usr/src/family_albums/staticfiles
     ports:
+      - "8000:8000"
       - "587:587"
     env_file: ./.django-celery-env
     depends_on:

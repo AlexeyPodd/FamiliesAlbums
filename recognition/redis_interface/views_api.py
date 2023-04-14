@@ -34,7 +34,6 @@ class RedisAPIStage2View(
 class RedisAPIStage3View(
     RedisAPIBaseView,
     RedisAPIStatus,
-    RedisAPIStatus,
 ):
     pass
 

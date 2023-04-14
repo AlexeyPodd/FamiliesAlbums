@@ -35,7 +35,7 @@ class MainPageView(ListView):
         ).annotate(
             Count('photos'),
         ).order_by(
-            '-time_update',
+            '-time_create',
         )[:16]
 
 
