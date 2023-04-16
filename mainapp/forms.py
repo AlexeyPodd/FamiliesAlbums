@@ -62,7 +62,10 @@ class AlbumCreateForm(forms.ModelForm):
 class AlbumEditForm(forms.ModelForm):
     images = forms.ImageField(widget=forms.ClearableFileInput(attrs={'multiple': True, 'class': 'form-control'}),
                               label='Upload photos to album',
-                              required=False)
+                              required=False,
+                              validators=[FileExtensionValidator(
+                                  allowed_extensions=['png', 'webp', 'jpeg', 'jpg'])],
+                              )
     delete = forms.BooleanField(widget=forms.CheckboxInput(attrs={'class': 'form-check-input',
                                                                   'style': 'width: 25px; height: 25px;'}),
                                 label='Delete album',

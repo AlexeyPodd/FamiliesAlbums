@@ -15,7 +15,7 @@ from django.db.models import Count
 from accounts.models import User
 from photoalbums.settings import ALBUMS_AMOUNT_LIMIT, ALBUM_PHOTOS_AMOUNT_LIMIT
 from .forms import *
-from .utils import get_zip, delete_from_favorites, FavoritesPaginator, AboutPageInfo
+from .utils import get_zip, delete_from_favorites, FavoritesPaginator, AboutPageInfo, get_photos_title
 from .tasks import album_deletion_task
 
 
@@ -276,7 +276,7 @@ class AlbumCreateView(LoginRequiredMixin, CreateView):
     def _add_images_to_album_object(self, form):
         images = self.request.FILES.getlist('images')
         for image in images:
-            photo = Photos(title=self._get_photos_title(image.name),
+            photo = Photos(title=get_photos_title(image.name),
                            date_start=form.cleaned_data['date_start'],
                            date_end=form.cleaned_data['date_end'],
                            location=form.cleaned_data['location'],
@@ -289,10 +289,6 @@ class AlbumCreateView(LoginRequiredMixin, CreateView):
         cover = self.object.photos_set.order_by('?').first()
         if cover:
             self.object.miniature = cover
-
-    @staticmethod
-    def _get_photos_title(filename):
-        return filename[:filename.rindex('.')]
 
     def get_success_url(self):
         return reverse_lazy('album_edit', kwargs={'username_slug': self.request.user.username_slug,

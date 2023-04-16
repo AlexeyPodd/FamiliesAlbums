@@ -16,6 +16,10 @@ def get_photo_save_path(instance, filename):
     return f'photos/{date}/{instance.album.slug}/{instance.slug}.{filename.split(".")[-1]}'
 
 
+def get_photos_title(filename):
+    return filename[:filename.rindex('.')]
+
+
 def get_zip(album, private_access=False):
     temp = tempfile.TemporaryFile()
     archive = zipfile.ZipFile(temp, 'w', zipfile.ZIP_DEFLATED)

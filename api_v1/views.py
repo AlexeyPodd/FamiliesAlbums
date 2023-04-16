@@ -3,7 +3,7 @@ from rest_framework.generics import ListAPIView
 from rest_framework.viewsets import ModelViewSet
 
 from .permissions import AlbumsPermission
-from .serializers.serializers import MainPageSerializer, UserAlbumsSerializer, UserAlbumDetailSerializer
+from .serializers.serializers import MainPageSerializer, UserAlbumsListSerializer, UserAlbumPostAndDetailSerializer
 from mainapp.models import Albums
 
 
@@ -39,6 +39,6 @@ class UserAlbumsViewSet(ModelViewSet):
 
     def get_serializer_class(self):
         if self.detail or self.request.method == 'POST':
-            return UserAlbumDetailSerializer
+            return UserAlbumPostAndDetailSerializer
         else:
-            return UserAlbumsSerializer
+            return UserAlbumsListSerializer
