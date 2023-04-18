@@ -27,7 +27,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = True
 # DEBUG = bool(int(os.environ.get('DEBUG', 0)))
 
-ALLOWED_HOSTS = ['127.0.0.1']
+ALLOWED_HOSTS = ['127.0.0.1', '0.0.0.0']
 # ALLOWED_HOSTS.extend(filter(None, os.environ.get('ALLOWED_HOSTS', '').split()))
 
 CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000']
@@ -143,8 +143,8 @@ REST_FRAMEWORK = {
 DJOSER = {
     'PASSWORD_RESET_CONFIRM_URL': 'api/v1/auth/password/reset/{uid}/{token}',
     'USERNAME_RESET_CONFIRM_URL': 'api/v1/auth/username/reset/{uid}/{token}',
-    'SEND_ACTIVATION_EMAIL': True,
     'ACTIVATION_URL': 'api/v1/auth/activate/{uid}/{token}',
+    'SEND_ACTIVATION_EMAIL': True,
     'USER_CREATE_PASSWORD_RETYPE': True,
     'SET_PASSWORD_RETYPE': True,
     'PASSWORD_RESET_CONFIRM_RETYPE': True,
@@ -157,7 +157,7 @@ DJOSER = {
         'username_reset_confirm': ['rest_framework.permissions.IsAdminUser'],
         'set_username': ['rest_framework.permissions.IsAdminUser'],
         'user_delete': ['rest_framework.permissions.IsAdminUser'],
-    }
+    },
 }
 
 
