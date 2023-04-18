@@ -16,7 +16,6 @@ Including another URLconf
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
-
 from mainapp.views import pageNotFound
 from photoalbums import settings
 
@@ -26,7 +25,6 @@ urlpatterns = [
     path('accounts/', include('accounts.urls')),
     path('recognition/', include('recognition.urls')),
     path('api/v1/', include('api_v1.urls')),
-    path('api/accounts/', include('rest_framework.urls')),
 ]
 
 if settings.DEBUG:

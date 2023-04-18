@@ -21,7 +21,7 @@ class MainPageSerializer(AlbumsMixin, serializers.ModelSerializer):
         fields = AlbumsMixin.Meta.fields + additional_fields
 
     def get_album_detail_url(self, album):
-        return reverse('api_v1_user_albums-detail',
+        return reverse('api_v1:user_albums-detail',
                        kwargs={'username_slug': album.owner.username_slug, 'pk': album.pk},
                        request=self.context.get('request'))
 
@@ -41,7 +41,7 @@ class UserAlbumsListSerializer(AlbumsMixin, serializers.ModelSerializer):
         fields = AlbumsMixin.Meta.fields + addition_fields
 
     def get_album_detail_url(self, album):
-        return reverse('api_v1_user_albums-detail',
+        return reverse('api_v1:user_albums-detail',
                        kwargs={'username_slug': album.owner.username_slug, 'pk': album.pk},
                        request=self.context.get('request'))
 
@@ -73,9 +73,9 @@ class UserAlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer)
     owner = serializers.HiddenField(default=serializers.CurrentUserDefault())
     miniature_url = serializers.SerializerMethodField()
     photos = PhotosSerializer(many=True, read_only=True, source='photos_set')
-    uploaded_photos = serializers.ListSerializer(
-        child=serializers.ImageField(max_length=Photos._meta.get_field('title').max_length, use_url=False),
-        write_only=True, required=False, allow_empty=True,
+    uploaded_photos = serializers.ListField(
+        child=serializers.ImageField(use_url=False),
+        write_only=True, required=False,
     )
 
     class Meta(AlbumsMixin.Meta):

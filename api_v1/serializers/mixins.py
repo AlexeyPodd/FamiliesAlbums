@@ -14,6 +14,8 @@ class AlbumsMixin:
         )
 
     def get_miniature_url(self, album):
+        if album.miniature is None:
+            return
         miniature_url = album.miniature.original.url
         request = self.context.get('request')
         return request.build_absolute_uri(miniature_url)

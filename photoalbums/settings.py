@@ -54,6 +54,8 @@ INSTALLED_APPS = [
     'recognition.apps.RecognitionConfig',
     'api_v1.apps.ApiV1Config',
     'rest_framework',
+    'rest_framework.authtoken',
+    'djoser',
     'compressor',
     'django_registration',
     'django_celery_beat',
@@ -123,6 +125,40 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+
+# Api settings
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    )
+}
+
+DJOSER = {
+    'PASSWORD_RESET_CONFIRM_URL': 'api/v1/auth/password/reset/{uid}/{token}',
+    'USERNAME_RESET_CONFIRM_URL': 'api/v1/auth/username/reset/{uid}/{token}',
+    'SEND_ACTIVATION_EMAIL': True,
+    'ACTIVATION_URL': 'api/v1/auth/activate/{uid}/{token}',
+    'USER_CREATE_PASSWORD_RETYPE': True,
+    'SET_PASSWORD_RETYPE': True,
+    'PASSWORD_RESET_CONFIRM_RETYPE': True,
+    'SERIALIZERS': {
+        'user': 'api_v1.serializers.auth_serializers.CustomUserSerializer',
+        'current_user': 'api_v1.serializers.auth_serializers.CustomUserSerializer',
+    },
+    'PERMISSIONS': {
+        'username_reset': ['rest_framework.permissions.IsAdminUser'],
+        'username_reset_confirm': ['rest_framework.permissions.IsAdminUser'],
+        'set_username': ['rest_framework.permissions.IsAdminUser'],
+        'user_delete': ['rest_framework.permissions.IsAdminUser'],
+    }
+}
 
 
 # Internationalization
@@ -238,11 +274,3 @@ SEARCH_PEOPLE_LIMIT = 20
 #
 #     hostname, _, ips = socket.gethostbyname_ex(socket.gethostname())
 #     INTERNAL_IPS = [ip[: ip.rfind(".")] + ".1" for ip in ips] + ["127.0.0.1", "10.0.2.2"]
-
-
-REST_FRAMEWORK = {
-    'DEFAULT_RENDERER_CLASSES': [
-        'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
-    ]
-}
