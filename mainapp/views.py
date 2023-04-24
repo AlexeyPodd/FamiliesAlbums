@@ -398,12 +398,12 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
         is_valid = True
         earliest_photo_forms = sorted(
             (photo_form for photo_form in self.photos_formset if photo_form.cleaned_data.get('date_start')),
-            key=lambda f: f.cleaned_data.get('date_start')
+            key=lambda f: f.cleaned_data.get('date_start'),
         )
         latest_photo_forms = sorted(
             (photo_form for photo_form in self.photos_formset if photo_form.cleaned_data.get('date_end')),
             key=lambda f: f.cleaned_data.get('date_end'),
-            reverse=True
+            reverse=True,
         )
 
         if form.cleaned_data.get('date_start') and earliest_photo_forms and \

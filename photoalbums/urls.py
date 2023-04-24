@@ -24,7 +24,7 @@ urlpatterns = [
     path('', include('mainapp.urls')),
     path('accounts/', include('accounts.urls')),
     path('recognition/', include('recognition.urls')),
-    path('api/v1/', include('api_v1.urls')),
+    path('api/v1/', include('api_v1.urls', namespace='api_v1')),
 ]
 
 if settings.DEBUG:

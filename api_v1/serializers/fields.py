@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 
-class MiniaturePrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
+class MiniatureSlugRelatedField(serializers.SlugRelatedField):
     def get_queryset(self):
         view = self.context.get('view')
         request = self.context.get('request')
@@ -13,4 +13,4 @@ class MiniaturePrimaryKeyRelatedField(serializers.PrimaryKeyRelatedField):
         if request.method == 'POST':
             return None
 
-        return queryset.filter(album_id=int(view.kwargs.get('pk')))
+        return queryset.filter(album__slug=view.kwargs.get('album_slug'))
