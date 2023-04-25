@@ -1,16 +1,13 @@
-from django.urls import path, include, re_path
+from django.urls import path, include
 from rest_framework.routers import SimpleRouter
 
 from .auth_views import ActivateUserAPIView, PasswordResetFormView
-from .views import MainPageAPIView, AlbumsViewSet, AnotherUserDetailAPIView, PhotosViewSet
+from .views import MainPageAPIView, AlbumsViewSet, AnotherUserDetailAPIView, PhotoAPIView
 
 app_name = 'api_v1'
 
 albums_router = SimpleRouter()
 albums_router.register(r'albums', AlbumsViewSet, basename='albums')
-
-photos_router = SimpleRouter()
-photos_router.register(r'(?P<username_slug>[^/.]+)/photos', PhotosViewSet, basename='photos')
 
 
 urlpatterns = [
@@ -21,5 +18,6 @@ urlpatterns = [
     path('auth/password/reset/<uid>/<token>', PasswordResetFormView.as_view(), name='password_reset_proxy'),
     path('main/', MainPageAPIView.as_view(), name='main'),
     path('<slug:username_slug>/', include(albums_router.urls)),
-    re_path('', include(photos_router.urls)),
+    path('<slug:username_slug>/albums/<slug:album_slug>/photo/<slug:photo_slug>/',
+         PhotoAPIView.as_view(), name='photos-detail'),
     ]

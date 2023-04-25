@@ -114,6 +114,12 @@ class AlbumEditForm(forms.ModelForm):
                 photo.is_private = instance.is_private
                 if instance.is_private:
                     photo.in_users_favorites.clear()
+
+                    # Delete all recognized faces
+                    if photo.faces_extracted:
+                        for face in photo.faces_set.all():
+                            face.delete()
+                        photo.faces_extracted = False
                 photo.save()
 
             if instance.is_private:
@@ -164,6 +170,7 @@ class CustomInlineFormset(BaseInlineFormSet):
                 if instance.faces_extracted:
                     for face in instance.faces_set.all():
                         face.delete()
+                    instance.faces_extracted = False
             if commit:
                 instance.save()
 

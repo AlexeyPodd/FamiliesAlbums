@@ -1,14 +1,15 @@
 from django.db.models import Count, Prefetch
-from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import User
-from .permissions import AlbumsPermission
+from .permissions import AlbumsPermission, PhotosPermission
 from .serializers.auth_serializers import AnotherUserSerializer
 from .serializers.serializers import MainPageSerializer, AlbumsListSerializer, AlbumPostAndDetailSerializer, \
-    PhotosListSerializer
+    PhotoDetailSerializer
 from mainapp.models import Albums, Photos
 from mainapp.tasks import album_deletion_task
+from .utils import set_random_album_cover
 
 
 class MainPageAPIView(ListAPIView):
@@ -26,7 +27,7 @@ class MainPageAPIView(ListAPIView):
 
 
 class AlbumsViewSet(ModelViewSet):
-    permission_classes = (AlbumsPermission, )
+    permission_classes = (AlbumsPermission,)
     lookup_field = 'slug'
     lookup_url_kwarg = 'album_slug'
 
@@ -57,20 +58,27 @@ class AlbumsViewSet(ModelViewSet):
         album_deletion_task.delay(instance.pk)
 
 
-class PhotosViewSet(ModelViewSet):
-    serializer_class = PhotosListSerializer
-    queryset = Photos.objects.all()
+class PhotoAPIView(RetrieveUpdateDestroyAPIView):
+    permission_classes = (PhotosPermission,)
+    serializer_class = PhotoDetailSerializer
     lookup_field = 'slug'
     lookup_url_kwarg = 'photo_slug'
 
     def get_queryset(self):
         if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs.get('username_slug'):
-            return Photos.objects.filter(album__owner__username_slug=self.kwargs.get('username_slug'))
+            return Photos.objects.filter(album__slug=self.kwargs.get('album_slug'))
         else:
             return Photos.objects.filter(
-                album__owner__username_slug=self.kwargs.get('username_slug'),
+                album__slug=self.kwargs.get('album_slug'),
                 is_private=False,
             )
+
+    def perform_destroy(self, instance):
+        album = instance.album
+        need_cover = album.miniature == instance
+        super().perform_destroy(instance)
+        if need_cover:
+            set_random_album_cover(album)
 
 
 class AnotherUserDetailAPIView(RetrieveAPIView):

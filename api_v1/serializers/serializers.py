@@ -6,6 +6,7 @@ from photoalbums.settings import ALBUM_PHOTOS_AMOUNT_LIMIT, ALBUMS_AMOUNT_LIMIT
 from .mixins import AlbumsMixin
 from .fields import MiniatureSlugRelatedField
 from mainapp.models import Photos, Albums
+from ..utils import set_random_album_cover, clear_photo_favorites_and_faces
 
 
 class MainPageSerializer(AlbumsMixin, serializers.ModelSerializer):
@@ -36,12 +37,13 @@ class MainPageSerializer(AlbumsMixin, serializers.ModelSerializer):
         )
 
 
-class PhotosListSerializer(serializers.ModelSerializer):
+class PhotoDetailSerializer(serializers.ModelSerializer):
+    owner_profile = serializers.SerializerMethodField()
+
     class Meta:
         model = Photos
         fields = (
             'title',
-            'slug',
             'date_start',
             'date_end',
             'location',
@@ -50,10 +52,87 @@ class PhotosListSerializer(serializers.ModelSerializer):
             'time_update',
             'is_private',
             'original',
+            'owner_profile',
         )
-        extra_kwargs = {
-            'original': {'read_only': True},
-        }
+        extra_kwargs = {'original': {'read_only': True}}
+
+    def get_owner_profile(self, photo):
+        if self.context['request'].user == photo.album.owner:
+            return self.context['request'].build_absolute_uri('/api/v1/auth/users/me/')
+        else:
+            return self.context['request'].build_absolute_uri(
+                f'/api/v1/auth/users/profile/{photo.album.owner.username_slug}/',
+            )
+
+    def update(self, instance, validated_data):
+        instance = super().update(instance, validated_data)
+
+        # If photo became private
+        if validated_data.get('is_private', False):
+            clear_photo_favorites_and_faces(instance)
+
+            # Changing cover of album while it's became private
+            if instance.album.miniature == instance and not instance.album.is_private:
+                set_random_album_cover(album=instance.album)
+
+        return instance
+
+    def validate_date_start(self, value):
+        instance = getattr(self, 'instance')
+        album_date_start = instance.album.date_start
+        if album_date_start and value < album_date_start:
+            message = 'This date does not match the album date period.'
+            raise serializers.ValidationError(message)
+        return value
+
+    def validate_date_end(self, value):
+        instance = getattr(self, 'instance')
+        album_date_end = instance.album.date_end
+        if album_date_end and value > album_date_end:
+            message = 'This date does not match the album date period.'
+            raise serializers.ValidationError(message)
+        return value
+
+    def validate_is_private(self, privacy):
+        instance = getattr(self, 'instance')
+        if instance.album.is_private and not privacy:
+            message = 'In private album can not be any public photos.'
+            raise serializers.ValidationError(message)
+        return privacy
+
+    def validate(self, data):
+        date_start = data.get('date_start')
+        date_end = data.get('date_end')
+        if date_start and date_end and date_start > date_end:
+            message = "The end of the photo period can't be earlier than the beginning"
+            raise serializers.ValidationError(message)
+        return super().validate(data)
+
+
+class PhotosListSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Photos
+        fields = (
+            'title',
+            'date_start',
+            'date_end',
+            'location',
+            'is_private',
+            'original',
+            'url',
+        )
+        extra_kwargs = {'original': {'read_only': True}}
+
+    def get_url(self, photo):
+        return reverse(
+            viewname='api_v1:photos-detail',
+            kwargs={'username_slug': photo.album.owner.username_slug,
+                    'album_slug': photo.album.slug,
+                    'photo_slug': photo.slug},
+            request=self.context.get('request')
+        )
 
 
 class AlbumsListSerializer(AlbumsMixin, serializers.ModelSerializer):
@@ -83,6 +162,7 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
                                           allow_null=True, write_only=True, required=False)
     download_url = serializers.SerializerMethodField()
     owner = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    owner_profile = serializers.SerializerMethodField()
     miniature_url = serializers.SerializerMethodField()
     photos = PhotosListSerializer(many=True, read_only=True, source='filtered_photos_set')
     uploaded_photos = serializers.ListField(
@@ -101,8 +181,17 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
             'photos',
             'uploaded_photos',
             'owner',
+            'owner_profile',
         )
         fields = AlbumsMixin.Meta.fields + addition_fields
+
+    def get_owner_profile(self, album):
+        if self.context['request'].user == album.owner:
+            return self.context['request'].build_absolute_uri('/api/v1/auth/users/me/')
+        else:
+            return self.context['request'].build_absolute_uri(
+                f'/api/v1/auth/users/profile/{album.owner.username_slug}/',
+            )
 
     def get_download_url(self, album):
         return reverse('download', request=self.context.get('request')) + f'?album={album.slug}'
@@ -112,7 +201,7 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
         uploaded_images = self._pop_uploaded_images(validated_data)
         instance = super().create(validated_data)
         self._create_new_photos(instance, uploaded_images)
-        self._set_random_cover(instance)
+        set_random_album_cover(instance)
         return instance
 
     def update(self, instance, validated_data):
@@ -123,9 +212,21 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
         had_photos = self.instance.photos_set.exists()
         self._create_new_photos(instance, uploaded_images)
         if not had_photos:
-            self._set_random_cover(instance)
+            set_random_album_cover(instance)
+
+        # Changing privacy of album
+        if validated_data.get('is_private') is not None:
+            self._change_album_privacy(instance)
 
         return instance
+
+    def validate(self, data):
+        date_start = data.get('date_start')
+        date_end = data.get('date_end')
+        if date_start and date_end and date_start > date_end:
+            message = "The end of the album period can't be earlier than the beginning"
+            raise serializers.ValidationError(message)
+        return super().validate(data)
 
     @staticmethod
     def _pop_uploaded_images(validated_data):
@@ -161,13 +262,6 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
             message = f"You can create only {ALBUM_PHOTOS_AMOUNT_LIMIT} albums"
             raise serializers.ValidationError(message)
 
-    @staticmethod
-    def _set_random_cover(album):
-        cover = album.photos_set.filter(is_private=False).order_by('?').first()
-        if cover:
-            album.miniature = cover
-            album.save()
-
     def validate_title(self, title):
         """Checking is title uniq for this user"""
 
@@ -183,8 +277,8 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
     def validate_date_start(self, value):
         instance = getattr(self, 'instance')
         if instance is not None:
-            earliest_photo_date = instance.photos_set.order_by('date_start').first().date_start
-            if instance.date_start and instance.date_start > earliest_photo_date:
+            earliest_photo = instance.photos_set.exclude(date_start=None).order_by('date_start').first()
+            if earliest_photo and value > earliest_photo.date_start:
                 message = 'There is a photo with an earlier date.'
                 raise serializers.ValidationError(message)
         return value
@@ -192,8 +286,21 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
     def validate_date_end(self, value):
         instance = getattr(self, 'instance')
         if instance is not None:
-            latest_photo_date = instance.photos_set.order_by('-date_end').first().date_end
-            if instance.date_end and instance.date_end < latest_photo_date:
+            latest_photo = instance.photos_set.exclude(date_end=None).order_by('-date_end').first()
+            if latest_photo and value < latest_photo.date_end:
                 message = 'There is a photo with an later date.'
                 raise serializers.ValidationError(message)
         return value
+
+    @staticmethod
+    def _change_album_privacy(album):
+        for photo in album.photos_set.all():
+            photo.is_private = album.is_private
+            if album.is_private:
+                clear_photo_favorites_and_faces(photo, commit=False)
+            photo.save()
+
+        if album.is_private:
+            album.in_users_favorites.clear()
+
+        album.save()

@@ -95,3 +95,29 @@ Redis stores the following keys:
 **Searching for similar people**:
 1. person_{pk}_processed_patterns_amount: int
 2. nearest_people_to_{pk}: list: int
+
+### API of site
+After completing the development of the server-side rendering site, it was also necessary to create an API using REST.
+
+#### API endpoints
+
+**Accounts (registration, authorization, profiles)**
+
+prefix - /api/v1/auth/
+1. *login* token/login/ [POST]
+2. *logout* token/logout/ [POST]
+3. *profile* users/me/ [GET, POST, PUT, PATCH]
+4. *another user profile* users/profile/\<slug:username_slug\>/ [GET]
+5. *user create* users/ [POST]
+6. *user activate* follow link in email or /users/activation/ [POST]
+7. *change password* /users/set_password/ [POST]
+8. *reset password* /users/reset_password/ [POST]
+9. *reset password confirmation* follow link in mail or users/reset_password_confirm/ [POST]
+
+**Main (albums, photos, favorites)**
+
+prefix - /api/v1/
+1. *main page* mian/ [GET]
+2. *user albums* \<slug:username_slug\>/albums/ [GET, POST]
+3. *album's detail and its photos* \<slug:username_slug\>/albums/\<slug:album_slug\> [GET, PUT, PATCH, DELETE]
+4. *detail photo* \<slug:username_slug\>/albums/\<slug:album_slug\>/photo/\<slug:photo_slug\>/ [GET, PUT, PATCH, DELETE]
