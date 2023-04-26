@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseNotFound, Http404, HttpResponseRedirect, FileResponse, HttpResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.templatetags.static import static
 from django.urls import reverse_lazy
 from django.views.generic import ListView, TemplateView, CreateView, UpdateView
@@ -75,7 +75,8 @@ class AboutPageView(TemplateView):
                                          title="Recognition",
                                          paragraphs=[
                                              "If you want to find photos with your relative that you don't have...",
-                                             "Or just let other users search your photos based on the people in them...",
+                                             "Or just let other users search your photos based on the"
+                                             " people in them...",
                                              "You should process your album to identify the people in it. This process "
                                              "is mostly automatic, requiring only a very simple confirmation of the "
                                              "result from you, which even a child can handle.",
@@ -106,9 +107,14 @@ class UserAlbumsView(ListView):
 
     def get_queryset(self):
         if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs['username_slug']:
-            queryset = self.model.objects.filter(owner__pk=self.request.user.pk).select_related('miniature', 'owner').annotate(Count('photos'))
+            queryset = self.model.objects.filter(
+                owner__pk=self.request.user.pk,
+            ).select_related('miniature', 'owner').annotate(Count('photos'))
         else:
-            queryset = self.model.objects.filter(owner__username_slug=self.kwargs['username_slug'], is_private=False).select_related('miniature', 'owner').annotate(Count('photos'))
+            queryset = self.model.objects.filter(
+                owner__username_slug=self.kwargs['username_slug'],
+                is_private=False,
+            ).select_related('miniature', 'owner').annotate(Count('photos'))
             if not queryset:
                 raise Http404
         return queryset
@@ -151,7 +157,9 @@ class AlbumView(SingleObjectMixin, ListView):
         })
         
         if self.request.user.is_authenticated:
-            context.update({'in_favorites': self.object.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists()})
+            context.update({'in_favorites': self.object.in_users_favorites.filter(
+                username_slug=self.request.user.username_slug,
+            ).exists()})
         
         return context
 
@@ -192,7 +200,9 @@ class PhotoView(DetailView):
         })
         
         if self.request.user.is_authenticated:
-            in_favorites = self.object.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists() or\
+            in_favorites = self.object.in_users_favorites.filter(
+                username_slug=self.request.user.username_slug,
+            ).exists() or\
                 self.object.album.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists()
             context.update({'in_favorites': in_favorites})
             
@@ -376,7 +386,7 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
 
         # deleting marked objects
         for delete_value in self.photos_formset.deleted_objects:
-            if delete_value.pk == self.object.miniature.pk:
+            if self.object.miniature and delete_value.pk == self.object.miniature.pk:
                 need_new_cover = True
             delete_value.delete()
 
@@ -507,7 +517,9 @@ class FavoritesView(LoginRequiredMixin, ListView):
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        return self.model.objects.filter(in_users_favorites__username_slug=self.request.user.username_slug).select_related('owner')
+        return self.model.objects.filter(
+            in_users_favorites=self.request.user,
+        ).select_related('owner')
 
 
 class FavoritesPhotosView(LoginRequiredMixin, ListView):
@@ -532,7 +544,9 @@ class FavoritesPhotosView(LoginRequiredMixin, ListView):
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
-        return self.model.objects.select_related('album__owner').filter(in_users_favorites__username_slug=self.request.user.username_slug)
+        return self.model.objects.select_related('album__owner').filter(
+            in_users_favorites__username_slug=self.request.user.username_slug,
+        )
 
 
 @login_required
@@ -566,7 +580,7 @@ def add_to_favorites(request):
 
         if not photo.album.owner.username_slug == request.user.username_slug and not photo.is_private and\
                 not photo.in_users_favorites.filter(username_slug=request.user.username_slug).exists():
-            photo.in_users_favorites.add(User.objects.get(username_slug=request.user.username_slug))
+            photo.in_users_favorites.add(request.user)
             photo.save()
 
     return HttpResponseRedirect(request.POST.get('next', '/'))
@@ -634,7 +648,7 @@ def save_album(request):
 
     album_slug = request.POST.get('album')
     if not album_slug:
-        HttpResponse(status=400)
+        return HttpResponse(status=400)
 
     try:
         album = Albums.objects.get(slug=album_slug, is_private=False)

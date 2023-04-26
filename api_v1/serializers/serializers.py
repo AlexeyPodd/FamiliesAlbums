@@ -12,21 +12,16 @@ from ..utils import set_random_album_cover, clear_photo_favorites_and_faces
 class MainPageSerializer(AlbumsMixin, serializers.ModelSerializer):
     photos_amount = serializers.IntegerField()
     miniature_url = serializers.SerializerMethodField()
-    owner = serializers.SerializerMethodField()
+    owner_profile = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
 
     class Meta(AlbumsMixin.Meta):
         additional_fields = (
             'time_create',
             'photos_amount',
-            'owner',
             'url',
         )
         fields = AlbumsMixin.Meta.fields + additional_fields
-
-    def get_owner(self, album):
-        return reverse('api_v1:user_profile', kwargs={'username_slug': album.owner.username_slug},
-                       request=self.context.get('request'))
 
     def get_url(self, album):
         return reverse(
@@ -139,6 +134,7 @@ class AlbumsListSerializer(AlbumsMixin, serializers.ModelSerializer):
     photos_amount = serializers.IntegerField(read_only=True)
     miniature_url = serializers.SerializerMethodField()
     url = serializers.SerializerMethodField()
+    owner_profile = serializers.SerializerMethodField()
 
     class Meta(AlbumsMixin.Meta):
         addition_fields = (
@@ -181,17 +177,8 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
             'photos',
             'uploaded_photos',
             'owner',
-            'owner_profile',
         )
         fields = AlbumsMixin.Meta.fields + addition_fields
-
-    def get_owner_profile(self, album):
-        if self.context['request'].user == album.owner:
-            return self.context['request'].build_absolute_uri('/api/v1/auth/users/me/')
-        else:
-            return self.context['request'].build_absolute_uri(
-                f'/api/v1/auth/users/profile/{album.owner.username_slug}/',
-            )
 
     def get_download_url(self, album):
         return reverse('download', request=self.context.get('request')) + f'?album={album.slug}'

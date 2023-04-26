@@ -10,6 +10,8 @@ class AlbumsMixin:
             'date_end',
             'location',
             'miniature_url',
+            'owner_profile',
+            'slug',
         )
 
     def get_miniature_url(self, album):
@@ -18,6 +20,14 @@ class AlbumsMixin:
         miniature_url = album.miniature.original.url
         request = self.context.get('request')
         return request.build_absolute_uri(miniature_url)
+
+    def get_owner_profile(self, album):
+        if self.context['request'].user == album.owner:
+            return self.context['request'].build_absolute_uri('/api/v1/auth/users/me/')
+        else:
+            return self.context['request'].build_absolute_uri(
+                f'/api/v1/auth/users/profile/{album.owner.username_slug}/',
+            )
 
 
 class UserMixin:
