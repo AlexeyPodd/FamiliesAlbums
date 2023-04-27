@@ -1,7 +1,16 @@
 from mainapp.models import Albums
 
 
-class AlbumsMixin:
+class AlbumMiniatureMixin:
+    def get_miniature_url(self, album):
+        if album.miniature is None:
+            return
+        miniature_url = album.miniature.original.url
+        request = self.context.get('request')
+        return request.build_absolute_uri(miniature_url)
+
+
+class AlbumsMixin(AlbumMiniatureMixin):
     class Meta:
         model = Albums
         fields = (
@@ -13,13 +22,6 @@ class AlbumsMixin:
             'owner_profile',
             'slug',
         )
-
-    def get_miniature_url(self, album):
-        if album.miniature is None:
-            return
-        miniature_url = album.miniature.original.url
-        request = self.context.get('request')
-        return request.build_absolute_uri(miniature_url)
 
     def get_owner_profile(self, album):
         if self.context['request'].user == album.owner:

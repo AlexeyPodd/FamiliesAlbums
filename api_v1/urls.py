@@ -2,9 +2,10 @@ from django.urls import path, include
 from rest_framework.routers import SimpleRouter
 
 from .auth_views import ActivateUserAPIView, PasswordResetFormView
-from .routers import FavoritesRouter
+from .routers import FavoritesRouter, PeopleRouter
 from .views import MainPageAPIView, AlbumsViewSet, AnotherUserDetailAPIView, PhotoAPIView, FavoritesAlbumsViewSet, \
-    FavoritesPhotosViewSet
+    FavoritesPhotosViewSet, PeopleViewSet, return_face_image_view, return_photo_with_framed_faces, \
+    RecognitionAlbumsListAPIView
 
 app_name = 'api_v1'
 
@@ -14,6 +15,9 @@ albums_router.register(r'albums', AlbumsViewSet, basename='albums')
 favorites_router = FavoritesRouter()
 favorites_router.register(r'albums', FavoritesAlbumsViewSet, basename='favorites_albums')
 favorites_router.register(r'photos', FavoritesPhotosViewSet, basename='favorites_photos')
+
+recognition_router = PeopleRouter()
+recognition_router.register(r'people', PeopleViewSet, basename='people')
 
 
 urlpatterns = [
@@ -27,4 +31,8 @@ urlpatterns = [
     path('user/<slug:username_slug>/albums/<slug:album_slug>/photos/<slug:photo_slug>/',
          PhotoAPIView.as_view(), name='photos-detail'),
     path('favorites/', include(favorites_router.urls)),
+    path('recognition/', include(recognition_router.urls)),
+    path('recognition/albums/', RecognitionAlbumsListAPIView.as_view(), name='recognition-albums'),
+    path('face_img/', return_face_image_view, name='face-img'),
+    path('photo_with_frames/', return_photo_with_framed_faces, name='photo-with-frames'),
 ]

@@ -121,3 +121,7 @@ prefix - /api/v1/
 2. *user albums* \<slug:username_slug\>/albums/ [GET, POST]
 3. *album's detail and its photos* \<slug:username_slug\>/albums/\<slug:album_slug\> [GET, PUT, PATCH, DELETE]
 4. *detail photo* \<slug:username_slug\>/albums/\<slug:album_slug\>/photo/\<slug:photo_slug\>/ [GET, PUT, PATCH, DELETE]
+5. *favorites albums* favorites/albums/ [GET, POST]
+6. *delete from favorites albums or save to own* favorites/albums/\<slug:album_slug\>/ [DELETE, PUT]
+7. *favorites photos* favorites/photos/ [GET, POST]
+8. *delete from favorites photos or save to own* favorites/photos/\<slug:photo_slug\>/ [DELETE, PUT]

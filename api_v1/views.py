@@ -1,19 +1,26 @@
+import os
+
+from PIL import Image, ImageDraw, ImageFont
+from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
-from django.db.models import Count, Prefetch
+from django.db.models import Count, Prefetch, Q
+from django.http import HttpResponse
 from rest_framework import status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.generics import ListAPIView, RetrieveAPIView, RetrieveUpdateDestroyAPIView, ListCreateAPIView
-from rest_framework.mixins import DestroyModelMixin, UpdateModelMixin
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import User
 from mainapp.utils import delete_from_favorites
+from photoalbums.settings import BASE_DIR
+from recognition.models import People, Faces
+from recognition.redis_interface.functional_api import RedisAPIPhotoDataGetter
 from .permissions import AlbumsPermission, PhotosPermission
 from .serializers.auth_serializers import AnotherUserSerializer
 from .serializers.serializers import MainPageSerializer, AlbumsListSerializer, AlbumPostAndDetailSerializer, \
-    PhotoDetailSerializer, PhotosListSerializer
+    PhotoDetailSerializer, PhotosListSerializer, PeopleListSerializer, PersonSerializer, RecognitionAlbumsSerializer
 from mainapp.models import Albums, Photos
 from mainapp.tasks import album_deletion_task
 from .utils import set_random_album_cover
@@ -245,3 +252,101 @@ class FavoritesPhotosViewSet(ModelViewSet):
 
     def perform_destroy(self, instance):
         delete_from_favorites(self.request.user, instance)
+
+
+class PeopleViewSet(ModelViewSet):
+    lookup_field = 'slug'
+    lookup_url_kwarg = 'person_slug'
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        if self.detail:
+            return People.objects.filter(owner=self.request.user).annotate(
+                patterns_amount=Count('patterns'),
+                photos_amount=Count('patterns__faces__photo', distinct=True),
+                albums_amount=Count('patterns__faces__photo__album', distinct=True),
+            )
+        else:
+            return People.objects.filter(owner=self.request.user)
+
+    def get_serializer_class(self):
+        if self.detail:
+            return PersonSerializer
+        else:
+            return PeopleListSerializer
+
+
+class RecognitionAlbumsListAPIView(ListAPIView):
+    serializer_class = RecognitionAlbumsSerializer
+    permission_classes = (IsAuthenticated,)
+
+    def get_queryset(self):
+        return Albums.objects.filter(owner=self.request.user).annotate(
+            processed_photos_amount=Count('photos', filter=(Q(photos__is_private=False) & Q(photos__faces_extracted=True))),
+            public_photos_amount=Count('photos', filter=Q(photos__is_private=False)),
+        )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def return_face_image_view(request):
+    face_slug = request.GET.get('face')
+    if face_slug is None:
+        return Response({"error": "Face slug was not specified."})
+
+    try:
+        face = Faces.objects.select_related('photo').get(slug=face_slug)
+    except ObjectDoesNotExist:
+        return Response({"error": "Face not found."})
+
+    if face.photo.is_private:
+        return Response({"error": "Face not found."})
+
+    response = cache.get(face_slug)
+    if response:
+        return response
+
+    photo_img = Image.open(os.path.join(BASE_DIR, face.photo.original.url[1:]))
+    top, right, bottom, left = face.loc_top, face.loc_right, face.loc_bot, face.loc_left
+    face_img = photo_img.crop((left, top, right, bottom))
+    response = HttpResponse(content_type='image/jpg')
+    face_img.save(response, "JPEG")
+    cache.set(face_slug, response, 60 * 5)
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def return_photo_with_framed_faces(request):
+    photo_slug = request.GET.get('photo')
+    if photo_slug is None:
+        return Response({"error": "Photo slug was not specified."})
+
+    try:
+        photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
+    except ObjectDoesNotExist:
+        return Response({"error": "Photo not found."})
+
+    if photo.is_private:
+        return Response({"error": "Photo not found."})
+
+    if request.user != photo.album.owner:
+        return Response({"error": "You are not owner of this photo."})
+
+    # Loading faces locations from redis
+    faces_locations = RedisAPIPhotoDataGetter.get_face_locations_in_photo(photo.pk)
+
+    # Drawing
+    image = Image.open(os.path.join(BASE_DIR, photo.original.url[1:]))
+    draw = ImageDraw.Draw(image)
+    for i, location in enumerate(faces_locations, 1):
+        top, right, bottom, left = location
+        draw.rectangle(((left, top), (right, bottom)), outline=(0, 255, 0), width=4)
+        fontsize = (bottom - top) // 3
+        font = ImageFont.truetype("arialbd.ttf", fontsize)
+        draw.text((left, top), str(i), fill=(255, 0, 0), font=font)
+    del draw
+
+    response = HttpResponse(content_type='image/jpg')
+    image.save(response, "JPEG")
+    return response

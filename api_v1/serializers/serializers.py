@@ -3,7 +3,9 @@ from rest_framework.reverse import reverse
 
 from mainapp.utils import get_photos_title
 from photoalbums.settings import ALBUM_PHOTOS_AMOUNT_LIMIT, ALBUMS_AMOUNT_LIMIT
-from .mixins import AlbumsMixin
+from recognition.models import People
+from .inner_serializers import PatternsSerializer
+from .mixins import AlbumsMixin, AlbumMiniatureMixin
 from .fields import MiniatureSlugRelatedField
 from mainapp.models import Photos, Albums
 from ..utils import set_random_album_cover, clear_photo_favorites_and_faces
@@ -39,6 +41,7 @@ class PhotoDetailSerializer(serializers.ModelSerializer):
         model = Photos
         fields = (
             'title',
+            'slug',
             'date_start',
             'date_end',
             'location',
@@ -291,3 +294,61 @@ class AlbumPostAndDetailSerializer(AlbumsMixin, serializers.ModelSerializer):
             album.in_users_favorites.clear()
 
         album.save()
+
+
+class PeopleListSerializer(serializers.HyperlinkedModelSerializer):
+    picture_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = People
+        fields = ('name', 'picture_url', 'url')
+        extra_kwargs = {
+            'url': {'view_name': 'api_v1:people-detail', 'lookup_field': 'slug', 'lookup_url_kwarg': 'person_slug'}
+        }
+
+    def get_picture_url(self, person):
+        return reverse('api_v1:face-img', request=self.context.get('request'))\
+            + f"?face={person.patterns_set.first().faces_set.first().slug}"
+
+
+class PersonSerializer(serializers.ModelSerializer):
+    patterns = PatternsSerializer(many=True, read_only=True, source='patterns_set')
+    patterns_amount = serializers.IntegerField(read_only=True)
+    photos_amount = serializers.IntegerField(read_only=True)
+    albums_amount = serializers.IntegerField(read_only=True)
+    # search_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = People
+        fields = (
+            'name',
+            'slug',
+            'patterns_amount',
+            'photos_amount',
+            'albums_amount',
+            # 'search_url',
+            'patterns',
+        )
+
+    # def get_search_url(self, person):
+    #     return reverse(
+    #         viewname='api_v1:search',
+    #         request=self.context['request'],
+    #         kwargs={'person_slug': person.slug},
+    #     )
+
+
+class RecognitionAlbumsSerializer(AlbumMiniatureMixin, serializers.ModelSerializer):
+    processed_photos_amount = serializers.IntegerField(read_only=True)
+    public_photos_amount = serializers.IntegerField(read_only=True)
+    miniature_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Albums
+        fields = (
+            'title',
+            'miniature_url',
+            'processed_photos_amount',
+            'public_photos_amount',
+            # 'processing_url',
+        )

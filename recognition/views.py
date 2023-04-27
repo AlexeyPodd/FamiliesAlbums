@@ -2,6 +2,7 @@ import os
 
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
+from django.core.exceptions import ObjectDoesNotExist
 from django.forms import formset_factory
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
@@ -36,8 +37,12 @@ def return_face_image_view(request):
     if face_slug is None:
         raise Http404
 
-    face = Faces.objects.select_related('photo').get(slug=face_slug)
-    if not request.user.is_authenticated or not face or face.photo.is_private:
+    try:
+        face = Faces.objects.select_related('photo').get(slug=face_slug)
+    except ObjectDoesNotExist:
+        raise Http404
+
+    if face.photo.is_private:
         raise Http404
 
     response = cache.get(face_slug)
@@ -62,8 +67,12 @@ def return_photo_with_framed_faces(request):
     if photo_slug is None:
         raise Http404
 
-    photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
-    if not request.user.is_authenticated or request.user.pk != photo.album.owner.pk or photo.is_private:
+    try:
+        photo = Photos.objects.select_related('album__owner').get(slug=photo_slug)
+    except ObjectDoesNotExist:
+        raise Http404
+
+    if request.user != photo.album.owner or photo.is_private:
         raise Http404
 
     # Loading faces locations from redis
