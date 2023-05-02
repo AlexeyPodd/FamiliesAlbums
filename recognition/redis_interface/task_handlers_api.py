@@ -27,6 +27,7 @@ class RedisAPIStage1Handler(
     RedisAPIBaseHandler,
     RedisAPIPhotoSlug,
     RedisAPIPhotoDataSetter,
+    RedisAPIFinished,
 ):
     pass
 

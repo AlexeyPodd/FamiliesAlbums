@@ -54,9 +54,7 @@ class BaseRecognitionLateStageHandler(BaseRecognitionHandler):
                 self._create_person_from_face_and_set_it_to_redis(photo_pk=photo_pk)
                 self._print_first_face()
             else:
-                raise Exception(
-                    "No people recognised and multiple patterns, or there is no faces at all."
-                )
+                raise Exception("No people recognised and multiple patterns, or there is no faces at all.")
 
     def _get_photo_pk_with_face(self):
         pks = map(lambda p: p.pk, Photos.objects.filter(album__pk=self._album_pk))
@@ -111,6 +109,12 @@ class FaceSearchingHandler(BaseRecognitionHandler):
         self._prepare_to_recognition()
         self._face_search_and_save_to_redis()
         super().handle()
+
+        # if no faces found
+        if self.redisAPI.get_photo_slugs_amount(self._album_pk) == 0:
+            self.redisAPI.set_no_faces(self._album_pk)
+            DataDeletionSupporter.clean_after_recognition(album_pk=self._album_pk)
+            set_album_photos_processed(album_pk=self._album_pk, status=True)
 
     def _get_path(self):
         if self._path is None:

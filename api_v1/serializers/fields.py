@@ -8,9 +8,14 @@ class MiniatureSlugRelatedField(serializers.SlugRelatedField):
         queryset = super().get_queryset()
 
         if not request or not view or not queryset:
-            return None
+            return
 
         if request.method == 'POST':
-            return None
+            return
 
         return queryset.filter(album__slug=view.kwargs.get('album_slug'))
+
+
+class DataOutputField(serializers.Field):
+    def to_representation(self, value):
+        pass

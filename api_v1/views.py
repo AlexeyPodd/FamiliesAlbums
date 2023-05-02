@@ -7,9 +7,11 @@ from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.generics import ListAPIView, RetrieveAPIView, RetrieveUpdateDestroyAPIView, ListCreateAPIView
+from rest_framework.exceptions import ValidationError
+from rest_framework.generics import ListAPIView, RetrieveAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import User
@@ -17,8 +19,11 @@ from mainapp.utils import delete_from_favorites
 from photoalbums.settings import BASE_DIR
 from recognition.models import People, Faces
 from recognition.redis_interface.functional_api import RedisAPIPhotoDataGetter
-from .permissions import AlbumsPermission, PhotosPermission
+from .data_collectors import RecognitionStateCollector
+from .managers import AlbumProcessStartManager
+from .permissions import AlbumsPermission, PhotosPermission, IsOwner
 from .serializers.auth_serializers import AnotherUserSerializer
+from .serializers.rec_processing_serializers import AlbumProcessingSerializer, AlbumProcessingDataInputSerializer
 from .serializers.serializers import MainPageSerializer, AlbumsListSerializer, AlbumPostAndDetailSerializer, \
     PhotoDetailSerializer, PhotosListSerializer, PeopleListSerializer, PersonSerializer, RecognitionAlbumsSerializer
 from mainapp.models import Albums, Photos
@@ -350,3 +355,58 @@ def return_photo_with_framed_faces(request):
     response = HttpResponse(content_type='image/jpg')
     image.save(response, "JPEG")
     return response
+
+
+class AlbumProcessingAPIView(APIView):
+    permission_classes = (IsOwner,)
+    data_collector_class = RecognitionStateCollector
+    manager_classes = {
+        None: AlbumProcessStartManager,
+    }
+
+    def get(self, request, *args, **kwargs):
+        try:
+            album = self.get_object()
+        except ObjectDoesNotExist:
+            return Response({'error': 'Album not found'})
+
+        data_collector = self.data_collector_class(album.pk)
+        data_collector.collect()
+
+        serializer = self.get_serializer(instance=data_collector)
+
+        return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        try:
+            album = self.get_object()
+        except ObjectDoesNotExist:
+            return Response({'error': 'Album not found'})
+
+        data_collector = self.data_collector_class(album.pk)
+
+        serializer = self.get_serializer(data=request.data, data_collector=data_collector)
+        serializer.is_valid(raise_exception=True)
+
+        data_collector.data = serializer.validated_data
+
+        manager = self.manager_classes.get(data_collector.stage)(data_collector)
+        manager.run()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def get_object(self):
+        obj = Albums.objects.get(slug=self.kwargs['album_slug'])
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def get_serializer(self, instance=None, data=None, data_collector=None):
+        if self.request.method == 'GET':
+            if instance is None:
+                raise ValidationError("Serializer need instance")
+            return AlbumProcessingSerializer(instance)
+
+        if self.request.method == 'POST':
+            if data is None or data_collector is None:
+                raise ValidationError("Serializer need data to validate and source of stage and status proccessing")
+            return AlbumProcessingDataInputSerializer(data=data, data_collector=data_collector)

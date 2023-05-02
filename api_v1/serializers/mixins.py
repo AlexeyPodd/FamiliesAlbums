@@ -1,3 +1,5 @@
+from rest_framework.exceptions import ValidationError
+
 from mainapp.models import Albums
 
 
@@ -39,3 +41,26 @@ class UserMixin:
         avatar_url = user.avatar.url
         request = self.context.get('request')
         return request.build_absolute_uri(avatar_url)
+
+
+class RecognitionDynamicFieldsMixin:
+    def __init__(self, *args, **kwargs):
+        data_collector = kwargs.pop('data_collector')
+        self.stage = data_collector.stage
+        self.status = data_collector.status
+        super().__init__(*args, **kwargs)
+
+        self._set_fields()
+
+    def _set_fields(self):
+        fields = ['start']
+
+        allowed = set(fields)
+        existing = set(self.fields)
+        for field_name in existing - allowed:
+            self.fields.pop(field_name)
+
+    def validate(self, attrs):
+        if self.status == 'processing':
+            raise ValidationError('Processing should be completed before receiving next stage data.')
+        return super().validate(attrs)

@@ -5,7 +5,7 @@ from .auth_views import ActivateUserAPIView, PasswordResetFormView
 from .routers import FavoritesRouter, PeopleRouter
 from .views import MainPageAPIView, AlbumsViewSet, AnotherUserDetailAPIView, PhotoAPIView, FavoritesAlbumsViewSet, \
     FavoritesPhotosViewSet, PeopleViewSet, return_face_image_view, return_photo_with_framed_faces, \
-    RecognitionAlbumsListAPIView
+    RecognitionAlbumsListAPIView, AlbumProcessingAPIView
 
 app_name = 'api_v1'
 
@@ -27,12 +27,13 @@ urlpatterns = [
     path('auth/activate/<uid>/<token>', ActivateUserAPIView.as_view(), name='activate_proxy'),
     path('auth/password/reset/<uid>/<token>', PasswordResetFormView.as_view(), name='password_reset_proxy'),
     path('main/', MainPageAPIView.as_view(), name='main'),
-    path('user/<slug:username_slug>/', include(albums_router.urls)),
-    path('user/<slug:username_slug>/albums/<slug:album_slug>/photos/<slug:photo_slug>/',
+    path('users/<slug:username_slug>/', include(albums_router.urls)),
+    path('users/<slug:username_slug>/albums/<slug:album_slug>/photos/<slug:photo_slug>/',
          PhotoAPIView.as_view(), name='photos-detail'),
     path('favorites/', include(favorites_router.urls)),
     path('recognition/', include(recognition_router.urls)),
     path('recognition/albums/', RecognitionAlbumsListAPIView.as_view(), name='recognition-albums'),
-    path('face_img/', return_face_image_view, name='face-img'),
-    path('photo_with_frames/', return_photo_with_framed_faces, name='photo-with-frames'),
+    path('recognition/processing/<slug:album_slug>/', AlbumProcessingAPIView.as_view(), name='recognition-processing'),
+    path('face-img/', return_face_image_view, name='face-img'),
+    path('photo-with-frames/', return_photo_with_framed_faces, name='photo-with-frames'),
 ]

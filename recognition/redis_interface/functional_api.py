@@ -31,14 +31,17 @@ class RedisAPIStage:
 
     @staticmethod
     def get_stage(album_pk: int):
-        return int(redis_instance.hget(f"album_{album_pk}", "current_stage"))
+        stage = redis_instance.hget(f"album_{album_pk}", "current_stage")
+        if stage is not None:
+            stage = int(stage)
+        return stage
 
     @classmethod
     def get_stage_or_404(cls, album_pk: int):
-        try:
-            return cls.get_stage(album_pk)
-        except TypeError:
+        stage = cls.get_stage(album_pk)
+        if stage is None:
             raise Http404
+        return stage
 
 
 class RedisAPIStatus:
@@ -172,24 +175,6 @@ class RedisAPIPhotoDataSetter:
 
 
 class RedisAPIPhotoDataChecker:
-    @staticmethod
-    def photo_processed_and_no_faces_found(photo_pk: int):
-        if not redis_instance.exists(f"photo_{photo_pk}"):
-            return False
-        elif redis_instance.hexists(f"photo_{photo_pk}", "face_1_location"):
-            return False
-        else:
-            return True
-
-    @staticmethod
-    def photo_processed_and_some_faces_found(photo_pk: int):
-        if not redis_instance.exists(f"photo_{photo_pk}"):
-            return False
-        elif redis_instance.hexists(f"photo_{photo_pk}", "face_1_location"):
-            return True
-        else:
-            return False
-
     @staticmethod
     def is_face_in_photo(photo_pk: int, face_index: int):
         return redis_instance.hexists(f"photo_{photo_pk}", f"face_{face_index}_location")

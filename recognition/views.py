@@ -18,14 +18,14 @@ from mainapp.models import Photos, Albums
 from .forms import *
 from .models import Faces, People, Patterns
 from .redis_interface.functional_api import RedisAPIPhotoDataGetter, RedisAPIStage, RedisAPIStatus, RedisAPIFinished, \
-    RedisAPIPhotoDataChecker, RedisAPISearchSetter
+    RedisAPISearchSetter
 from .redis_interface.views_api import RedisAPIStageSearchView, RedisAPIStage1View, RedisAPIStage3View, \
     RedisAPIStage4View, RedisAPIStage2View, RedisAPIStage5View, RedisAPIStage6View, RedisAPIStage7View, \
     RedisAPIStage8View, RedisAPIStage9View
 from .tasks import recognition_task
 from photoalbums.settings import MEDIA_ROOT, BASE_DIR
-from .utils import set_album_photos_processed
 from .mixin_views import RecognitionMixin, ManualRecognitionMixin
+from .utils import set_album_photos_processed
 
 
 @login_required
@@ -157,7 +157,10 @@ def find_faces_view(request):
     if album_slug is None:
         raise Http404
 
-    album = Albums.objects.select_related('owner').get(slug=album_slug)
+    try:
+        album = Albums.objects.select_related('owner').get(slug=album_slug)
+    except ObjectDoesNotExist:
+        raise Http404
 
     if request.user.username_slug != album.owner.username_slug:
         raise Http404
@@ -180,10 +183,11 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
-        if self._photos_processed_and_no_faces_found():
-            self.redisAPI.set_no_faces(album_pk=self.object.pk)
-            recognition_task.delay(self.object.pk, -1)
-            return redirect('no_faces', album_slug=self.object.slug)
+        if self.current_stage is None:
+            if self._photos_processed_and_no_faces_found():
+                return redirect('no_faces', album_slug=self.object.slug)
+            else:
+                raise Http404
 
         self._status = self.redisAPI.get_status(self.object.pk)
         if self._status == "completed":
@@ -193,9 +197,11 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
         return super().get(request, *args, **kwargs)
 
     def _check_recognition_stage(self, waiting_task=True):
-        current_stage = self.redisAPI.get_stage_or_404(self.object.pk)
-        if current_stage not in (self.recognition_stage - 1, self.recognition_stage):
+        current_stage = self.redisAPI.get_stage(self.object.pk)
+        if current_stage is not None and current_stage not in (self.recognition_stage - 1, self.recognition_stage):
             raise Http404
+
+        self.current_stage = current_stage
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -218,11 +224,12 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
         return context
 
     def _photos_processed_and_no_faces_found(self):
-        pks = tuple(map(lambda p: p.pk, self.object.photos_set.all()))
-        return all(map(self.redisAPI.photo_processed_and_no_faces_found, pks))
+        return all(map(lambda p: p.faces_extracted, self.object.photos_set.all())) and \
+            not any(map(lambda p: p.faces_set.exists(), self.object.photos_set.all()))
 
     def get_queryset(self):
-        queryset = self.model.objects.select_related('owner').filter(owner__pk=self.request.user.pk).annotate(
+        queryset = self.model.objects.prefetch_related('photos_set__faces_set').select_related('owner').filter(
+            owner__pk=self.request.user.pk).annotate(
             public_photos=Count('photos', filter=Q(photos__is_private=False))
         )
 
@@ -280,6 +287,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
             if self._faces_amount == 0:
                 self.redisAPI.set_no_faces(self.album.pk)
                 recognition_task.delay(self.album.pk, -1)
+                set_album_photos_processed(album_pk=self.album.pk, status=True)
             else:
                 self._get_next_stage()
                 self._start_celery_task(self._next_stage)
@@ -331,7 +339,7 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
                 return reverse_lazy('patterns_waiting', kwargs={'album_slug': self.album.slug})
         else:
             next_photo_slug = self.redisAPI.get_next_photo_slug(album_pk=self.album.pk,
-                                                                 current_photo_slug=self.object.slug)
+                                                                current_photo_slug=self.object.slug)
             return reverse_lazy('verify_frames', kwargs={'album_slug': self.album.slug, 'photo_slug': next_photo_slug})
 
     def get_context_data(self, *, object_list=None, **kwargs):
@@ -685,15 +693,9 @@ class ComparingAlbumPeopleWaitingView(LoginRequiredMixin, RecognitionMixin, Deta
         self._get_object_and_make_checks(waiting_task=True)
 
         self.status = self.redisAPI.get_status(self.object.pk)
-        self._any_tech_matches = self.redisAPI.check_any_tech_matches(self.object.pk)
 
         if self.status == 'completed':
-            if self._any_tech_matches:
-                return redirect('verify_matches', album_slug=self.object.slug)
-            else:
-                self.redisAPI.set_stage(album_pk=self.object.pk, stage=self.recognition_stage + 1)
-                self.redisAPI.set_status(album_pk=self.object.pk, status='completed')
-                return redirect('manual_matching', album_slug=self.object.slug)
+            return redirect('verify_matches', album_slug=self.object.slug)
 
         return super().get(request, *args, **kwargs)
 
@@ -730,13 +732,16 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
     def get(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
 
+        if not self.redisAPI.check_any_tech_matches(self.object.pk):
+            self._set_correct_status()
+            return redirect('manual_matching', album_slug=self.object.slug)
+
         self._get_matches_urls()
 
         return super().get(request, *args, **kwargs)
 
     def post(self, request, *args, **kwargs):
         self._get_object_and_make_checks()
-
         self._get_matches_urls()
 
         return super().post(request, *args, **kwargs)
@@ -799,7 +804,8 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
                 self.redisAPI.set_verified_pair(self.object.pk, new_per_ind, old_per_pk)
 
     def _set_correct_status(self):
-        if not self._new_singe_people_present or not self._old_singe_people_present:
+        if hasattr(self, '_new_singe_people_present') and hasattr(self, '_old_singe_people_present') and\
+                (not self._new_singe_people_present or not self._old_singe_people_present):
             self.redisAPI.set_stage(album_pk=self.object.pk, stage=9)
             self.redisAPI.set_status(album_pk=self.object.pk, status="processing")
         else:
@@ -962,9 +968,8 @@ class AlbumRecognitionDataSavingWaitingView(LoginRequiredMixin, RecognitionMixin
         return super().get(request, *args, **kwargs)
 
     def _check_recognition_stage(self, waiting_task=True):
-        try:
-            current_stage = self.redisAPI.get_stage(self.object.pk)
-        except TypeError:
+        current_stage = self.redisAPI.get_stage(self.object.pk)
+        if current_stage is None:
             if self.redisAPI.get_finished_status(self.object.pk) != '1':
                 raise Http404
         else:
@@ -1019,11 +1024,7 @@ class RenameAlbumsPeopleView(LoginRequiredMixin, FormMixin, RecognitionMixin, De
         if RedisAPIFinished.get_finished_status(self.object.pk) != '1':
             raise Http404
 
-        try:
-            RedisAPIStage.get_stage(self.object.pk)
-        except TypeError:
-            pass
-        else:
+        if RedisAPIStage.get_stage(self.object.pk) is not None:
             raise Http404
 
     def _get_people(self):
@@ -1095,12 +1096,10 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
         self._check_access_right()
         self._check_photos_processed_and_no_faces_found()
 
-        set_album_photos_processed(album_pk=self.object.pk, status=True)
-
         return super().get(request, *args, **kwargs)
         
     def get_queryset(self):
-        return self.model.objects.prefetch_related('photos_set').select_related('owner').filter(owner__pk=self.request.user.pk)
+        return self.model.objects.prefetch_related('photos_set__faces_set').select_related('owner').filter(owner__pk=self.request.user.pk)
 
     def _check_photos_processed_and_no_faces_found(self):
         if RedisAPIFinished.get_finished_status(self.object.pk) != "no_faces":
@@ -1110,8 +1109,8 @@ class NoFacesAlbumView(LoginRequiredMixin, RecognitionMixin, DetailView):
             raise Http404
 
     def _album_processed_and_some_faces_found(self):
-        pks = tuple(map(lambda p: p.pk, self.object.photos_set.all()))
-        return any(map(RedisAPIPhotoDataChecker.photo_processed_and_some_faces_found, pks))
+        return all(map(lambda p: p.faces_extracted, self.object.photos_set.all())) and\
+            any(map(lambda p: p.faces_set.exists(), self.object.photos_set.all()))
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
