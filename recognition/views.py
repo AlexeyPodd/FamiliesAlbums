@@ -283,8 +283,8 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
 
         self._is_last_photo = self.object.slug == self.redisAPI.get_last_photo_slug(self.album.pk)
         if self._is_last_photo:
-            self._count_verified_faces()
-            if self._faces_amount == 0:
+            self._count_photos_with_verified_faces()
+            if self._photos_with_faces_amount == 0:
                 self.redisAPI.set_no_faces(self.album.pk)
                 recognition_task.delay(self.album.pk, -1)
                 set_album_photos_processed(album_pk=self.album.pk, status=True)
@@ -304,9 +304,9 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
             photo__album__owner__username_slug=self.album.owner.username_slug,
         ).exclude(photo__album__pk=self.album.pk).exists()
 
-        if self._faces_amount == 1 and another_album_processed:
+        if self._photos_with_faces_amount == 1 and another_album_processed:
             self._next_stage = 6
-        elif self._faces_amount == 1:
+        elif self._photos_with_faces_amount == 1:
             self._next_stage = 9
         else:
             self._next_stage = 3
@@ -326,9 +326,9 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
 
     def get_success_url(self):
         if self._is_last_photo:
-            if self._faces_amount == 0:
+            if self._photos_with_faces_amount == 0:
                 return reverse_lazy('no_faces', kwargs={'album_slug': self.album.slug})
-            elif self._faces_amount == 1:
+            elif self._photos_with_faces_amount == 1:
                 if self._next_stage == 9:
                     return reverse_lazy('save_waiting', kwargs={'album_slug': self.album.slug})
                 elif self._next_stage == 6:
@@ -368,12 +368,12 @@ class AlbumVerifyFramesView(LoginRequiredMixin, FormMixin, ManualRecognitionMixi
         self.redisAPI.set_status(album_pk=self.album.pk, status="processing")
         recognition_task.delay(self.album.pk, next_stage)
 
-    def _count_verified_faces(self):
+    def _count_photos_with_verified_faces(self):
         count = 0
         for pk in map(lambda p: p.pk, self.album.photos_set.all()):
             if self.redisAPI.is_face_in_photo(photo_pk=pk, face_index=1):
                 count += 1
-        self._faces_amount = count
+        self._photos_with_faces_amount = count
 
 
 class AlbumPatternsWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):

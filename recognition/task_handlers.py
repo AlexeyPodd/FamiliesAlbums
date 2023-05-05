@@ -43,22 +43,22 @@ class BaseRecognitionHandler:
 
 
 class BaseRecognitionLateStageHandler(BaseRecognitionHandler):
-    def _get_new_people_data_from_redis_or_create_person(self):
+    def _get_new_people_data_from_redis_or_create_people(self):
         if self.redisAPI.check_any_person_found(self._album_pk):
             self._new_people = self.redisAPI.get_people_data(self._album_pk)
         elif self.redisAPI.check_single_pattern_formed(self._album_pk):
             self._create_person_from_pattern_and_set_it_to_redis()
         else:
-            photo_pk = self._get_photo_pk_with_face()
+            photo_pk = self._get_photo_pk_with_faces()
             if photo_pk:
-                self._create_person_from_face_and_set_it_to_redis(photo_pk=photo_pk)
-                self._print_first_face()
+                self._create_people_from_faces_and_set_them_to_redis(photo_pk=photo_pk)
+                self._print_faces_of_single_photo_with_faces()
             else:
                 raise Exception("No people recognised and multiple patterns, or there is no faces at all.")
 
-    def _get_photo_pk_with_face(self):
+    def _get_photo_pk_with_faces(self):
         pks = map(lambda p: p.pk, Photos.objects.filter(album__pk=self._album_pk))
-        return self.redisAPI.get_single_photo_with_one_face(photos_pks=pks)
+        return self.redisAPI.get_single_photo_with_faces(photos_pks=pks)
 
     def _create_person_from_pattern_and_set_it_to_redis(self):
         # Creating person
@@ -68,29 +68,30 @@ class BaseRecognitionLateStageHandler(BaseRecognitionHandler):
         # Setting it to redis
         self.redisAPI.set_one_person_with_one_pattern(self._album_pk)
 
-    def _create_person_from_face_and_set_it_to_redis(self, photo_pk):
-        # Creating person
-        person_data = self.redisAPI.create_person_from_single_face(photo_pk)
-        self._new_people.append(person_data)
+    def _create_people_from_faces_and_set_them_to_redis(self, photo_pk):
+        # Creating people
+        people_data = self.redisAPI.create_people_from_faces_on_single_photo(photo_pk)
+        self._new_people.extend(people_data)
 
-        # Setting it to redis
-        self.redisAPI.set_one_person_with_one_pattern_with_one_face(self._album_pk, photo_pk)
+        # Setting them to redis
+        self.redisAPI.set_people_with_one_pattern_with_one_face_from_single_photo(self._album_pk, photo_pk,
+                                                                                  faces_amount=len(people_data))
 
-    def _print_first_face(self):
-        face = next(iter(next(iter(self._new_people[0]))))
+    def _print_faces_of_single_photo_with_faces(self):
+        for i, face in enumerate(map(lambda person: person[0].central_face, self._new_people), 1):
 
-        # Cut face image
-        image = fr.load_image_file(os.path.join(BASE_DIR, Photos.objects.get(pk=face.photo_pk).original.url[1:]))
-        top, right, bottom, left = face.location
-        face_image = image[top:bottom, left:right]
-        pil_image = Image.fromarray(face_image)
+            # Cut face image
+            image = fr.load_image_file(os.path.join(BASE_DIR, Photos.objects.get(pk=face.photo_pk).original.url[1:]))
+            top, right, bottom, left = face.location
+            face_image = image[top:bottom, left:right]
+            pil_image = Image.fromarray(face_image)
 
-        # Save face image to temp folder
-        path = os.path.join(TEMP_ROOT, f'album_{self._album_pk}/patterns', '1')
-        if not os.path.exists(path):
-            os.makedirs(path)
-        save_path = os.path.join(path, '1.jpg')
-        pil_image.save(save_path)
+            # Save face image to temp folder
+            path = os.path.join(TEMP_ROOT, f'album_{self._album_pk}/patterns', str(i))
+            if not os.path.exists(path):
+                os.makedirs(path)
+            save_path = os.path.join(path, '1.jpg')
+            pil_image.save(save_path)
 
 
 class FaceSearchingHandler(BaseRecognitionHandler):
@@ -245,7 +246,7 @@ class ComparingExistingAndNewPeopleHandler(BaseRecognitionLateStageHandler):
 
     def handle(self):
         self._get_existing_people_data_from_db()
-        self._get_new_people_data_from_redis_or_create_person()
+        self._get_new_people_data_from_redis_or_create_people()
         self._connect_people_in_pairs()
         self._save_united_people_data_to_redis()
         super().handle()
@@ -340,7 +341,7 @@ class SavingAlbumRecognitionDataToDBHandler(BaseRecognitionLateStageHandler):
         self._new_patterns_instances = []
 
     def handle(self):
-        self._get_new_people_data_from_redis_or_create_person()
+        self._get_new_people_data_from_redis_or_create_people()
         self._save_data_to_db()
         self._save_album_report()
         self._set_finished_and_clear()

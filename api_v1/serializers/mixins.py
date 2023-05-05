@@ -43,22 +43,12 @@ class UserMixin:
         return request.build_absolute_uri(avatar_url)
 
 
-class RecognitionDynamicFieldsMixin:
+class AlbumProcessingMixin:
     def __init__(self, *args, **kwargs):
         data_collector = kwargs.pop('data_collector')
         self.stage = data_collector.stage
         self.status = data_collector.status
         super().__init__(*args, **kwargs)
-
-        self._set_fields()
-
-    def _set_fields(self):
-        fields = ['start']
-
-        allowed = set(fields)
-        existing = set(self.fields)
-        for field_name in existing - allowed:
-            self.fields.pop(field_name)
 
     def validate(self, attrs):
         if self.status == 'processing':

@@ -120,16 +120,16 @@ class RedisAPIPhotoDataGetter:
         return photo_faces
 
     @staticmethod
-    def get_single_photo_with_one_face(photos_pks):
-        photo_pk_with_face = None
+    def get_single_photo_with_faces(photos_pks):
+        photo_pk_with_faces = None
         for pk in photos_pks:
             if redis_instance.hexists(f"photo_{pk}", "face_1_location"):
-                if photo_pk_with_face is None:
-                    photo_pk_with_face = pk
+                if photo_pk_with_faces is None:
+                    photo_pk_with_faces = pk
                 else:
-                    raise Exception("Was founded multiple faces. Need relate them before saving.")
+                    raise Exception("Was founded multiple photos with. Need to relate them before saving.")
 
-        return photo_pk_with_face
+        return photo_pk_with_faces
 
     @staticmethod
     def get_faces_amount_in_photo(photo_pk: int):
@@ -451,29 +451,41 @@ class RedisAPIPersonDataCreator:
         return person_data
 
     @staticmethod
-    def create_person_from_single_face(photo_pk):
-        person_data = PersonData(redis_indx=1)
-        face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_location"))
-        face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_1_encoding"))
-        face = FaceData(photo_pk=int(photo_pk),
-                        index=1,
-                        location=face_loc,
-                        encoding=face_enc)
-        pattern_data = PatternData(face)
-        person_data.add_pattern(pattern_data)
-        return person_data
+    def create_people_from_faces_on_single_photo(photo_pk):
+        people_data = []
+        i = 1
+        while redis_instance.hexists(f"photo_{photo_pk}", f"face_{i}_location"):
+            person_data = PersonData(redis_indx=i)
+            face_loc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{i}_location"))
+            face_enc = pickle.loads(redis_instance_raw.hget(f"photo_{photo_pk}", f"face_{i}_encoding"))
+            face = FaceData(photo_pk=int(photo_pk),
+                            index=i,
+                            location=face_loc,
+                            encoding=face_enc)
+            pattern_data = PatternData(face)
+            person_data.add_pattern(pattern_data)
+            people_data.append(person_data)
+            i += 1
+
+        return people_data
 
 
 class RedisAPIPersonDataSetter:
-    @classmethod
-    def set_one_person_with_one_pattern_with_one_face(cls, album_pk: int, photo_pk: int):
-        redis_instance.hset(f"album_{album_pk}_pattern_1", "face_1", f"photo_{photo_pk}_face_1")
-        redis_instance.hset(f"album_{album_pk}_pattern_1", "central_face", "face_1")
-        redis_instance.hset(f"album_{album_pk}_pattern_1", "faces_amount", "1")
-        redis_instance.hset(f"album_{album_pk}_pattern_1", "person", "1")
-        redis_instance.hset(f"album_{album_pk}", "number_of_verified_patterns", "1")
-        redis_instance.expire(f"album_{album_pk}_pattern_1", REDIS_DATA_EXPIRATION_SECONDS)
-        cls.set_one_person_with_one_pattern(album_pk=album_pk)
+    @staticmethod
+    def set_people_with_one_pattern_with_one_face_from_single_photo(album_pk: int, photo_pk: int, faces_amount: int):
+        for i in range(1, faces_amount + 1):
+            redis_instance.hset(f"album_{album_pk}_pattern_{i}", "face_1", f"photo_{photo_pk}_face_{i}")
+            redis_instance.hset(f"album_{album_pk}_pattern_{i}", "central_face", "face_1")
+            redis_instance.hset(f"album_{album_pk}_pattern_{i}", "faces_amount", "1")
+            redis_instance.hset(f"album_{album_pk}_pattern_{i}", "person", str(i))
+            redis_instance.expire(f"album_{album_pk}_pattern_{i}", REDIS_DATA_EXPIRATION_SECONDS)
+
+            redis_instance.hset(f"album_{album_pk}_person_{i}", "pattern_1", str(i))
+            redis_instance.expire(f"album_{album_pk}_person_{i}", REDIS_DATA_EXPIRATION_SECONDS)
+
+        redis_instance.hset(f"album_{album_pk}", "number_of_verified_patterns", faces_amount)
+        redis_instance.hset(f"album_{album_pk}", "people_amount", faces_amount)
+        redis_instance.expire(f"album_{album_pk}", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
     def set_one_person_with_one_pattern(album_pk: int):

@@ -20,10 +20,10 @@ from photoalbums.settings import BASE_DIR
 from recognition.models import People, Faces
 from recognition.redis_interface.functional_api import RedisAPIPhotoDataGetter
 from .data_collectors import RecognitionStateCollector
-from .managers import AlbumProcessStartManager
+from .managers import StartProcessingManager
 from .permissions import AlbumsPermission, PhotosPermission, IsOwner
 from .serializers.auth_serializers import AnotherUserSerializer
-from .serializers.rec_processing_serializers import AlbumProcessingSerializer, AlbumProcessingDataInputSerializer
+from .serializers.rec_processing_serializers import AlbumProcessingInfoSerializer, StartAlbumProcessingSerializer
 from .serializers.serializers import MainPageSerializer, AlbumsListSerializer, AlbumPostAndDetailSerializer, \
     PhotoDetailSerializer, PhotosListSerializer, PeopleListSerializer, PersonSerializer, RecognitionAlbumsSerializer
 from mainapp.models import Albums, Photos
@@ -360,9 +360,6 @@ def return_photo_with_framed_faces(request):
 class AlbumProcessingAPIView(APIView):
     permission_classes = (IsOwner,)
     data_collector_class = RecognitionStateCollector
-    manager_classes = {
-        None: AlbumProcessStartManager,
-    }
 
     def get(self, request, *args, **kwargs):
         try:
@@ -390,7 +387,7 @@ class AlbumProcessingAPIView(APIView):
 
         data_collector.data = serializer.validated_data
 
-        manager = self.manager_classes.get(data_collector.stage)(data_collector)
+        manager = self.get_manager_class(data_collector.stage)(data_collector)
         manager.run()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -404,9 +401,15 @@ class AlbumProcessingAPIView(APIView):
         if self.request.method == 'GET':
             if instance is None:
                 raise ValidationError("Serializer need instance")
-            return AlbumProcessingSerializer(instance)
+            return AlbumProcessingInfoSerializer(instance)
 
         if self.request.method == 'POST':
             if data is None or data_collector is None:
-                raise ValidationError("Serializer need data to validate and source of stage and status proccessing")
-            return AlbumProcessingDataInputSerializer(data=data, data_collector=data_collector)
+                raise ValidationError("Serializer need data to validate and source of stage and status processing")
+
+            if 'start' in data.keys():
+                return StartAlbumProcessingSerializer(data=data, data_collector=data_collector)
+
+    def get_manager_class(self, stage):
+        if stage == 1:
+            return StartProcessingManager
