@@ -387,7 +387,7 @@ class AlbumProcessingAPIView(APIView):
 
         data_collector.data = serializer.validated_data
 
-        manager = self.get_manager_class(data_collector.stage)(data_collector)
+        manager = self.get_manager_class(data_collector.stage)(data_collector, user=request.user)
         manager.run()
 
         return Response(status=status.HTTP_204_NO_CONTENT)

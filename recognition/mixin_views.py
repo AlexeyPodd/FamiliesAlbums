@@ -21,12 +21,13 @@ class RecognitionMixin:
 
     def _check_recognition_stage(self, waiting_task):
         stage = self.redisAPI.get_stage_or_404(self.object.pk)
+        status = self.redisAPI.get_status(self.object.pk)
 
         if waiting_task:
-            if stage != self.recognition_stage:
+            if not (stage == self.recognition_stage and status == "processing" or
+                    stage in (self.recognition_stage, self.recognition_stage + 1) and status == "completed"):
                 raise Http404
         else:
-            status = self.redisAPI.get_status(self.object.pk)
             if not (stage == self.recognition_stage and status == "processing" or
                     stage == self.recognition_stage - 1 and status == "completed"):
                 raise Http404

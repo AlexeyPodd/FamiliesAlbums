@@ -197,11 +197,11 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
         return super().get(request, *args, **kwargs)
 
     def _check_recognition_stage(self, waiting_task=True):
-        current_stage = self.redisAPI.get_stage(self.object.pk)
-        if current_stage is not None and current_stage not in (self.recognition_stage - 1, self.recognition_stage):
+        stage = self.redisAPI.get_stage(self.object.pk)
+        if stage is not None and stage not in (self.recognition_stage - 1, self.recognition_stage):
             raise Http404
 
-        self.current_stage = current_stage
+        self.current_stage = stage
 
     def get_context_data(self, *, object_list=None, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -225,7 +225,8 @@ class AlbumFramesWaitingView(LoginRequiredMixin, RecognitionMixin, DetailView):
 
     def _photos_processed_and_no_faces_found(self):
         return all(map(lambda p: p.faces_extracted, self.object.photos_set.all())) and \
-            not any(map(lambda p: p.faces_set.exists(), self.object.photos_set.all()))
+            not any(map(lambda p: p.faces_set.exists(), self.object.photos_set.all())) and \
+            self.redisAPI.get_finished_status(self.object.pk) == "no_faces"
 
     def get_queryset(self):
         queryset = self.model.objects.prefetch_related('photos_set__faces_set').select_related('owner').filter(
@@ -430,6 +431,10 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
         self._verified_patterns_amount = self.redisAPI.get_verified_patterns_amount(self.object.pk)
 
         # If all patterns have only one face each
+        if self._check_completed_verification_in_task():
+            return redirect('group_patterns', album_slug=self.object.slug)
+
+        # If not verified patterns have only one face each
         if all(map(lambda x: x == 1, self._faces_amounts[self._verified_patterns_amount:])):
             self._prepare_to_redirect_to_next_stage()
             return redirect('group_patterns', album_slug=self.object.slug)
@@ -462,10 +467,25 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
         else:
             return self.form_invalid(form)
 
+    def _check_recognition_stage(self, waiting_task):
+        if self.request.method == 'GET':
+            stage = self.redisAPI.get_stage_or_404(self.object.pk)
+            status = self.redisAPI.get_status(self.object.pk)
+            if not (stage == self.recognition_stage and status == "processing" or
+                    stage in (self.recognition_stage - 1, self.recognition_stage) and status == "completed"):
+                raise Http404
+        else:
+            super()._check_recognition_stage(waiting_task)
+
+    def _check_completed_verification_in_task(self):
+        stage = self.redisAPI.get_stage_or_404(self.object.pk)
+        status = self.redisAPI.get_status(self.object.pk)
+        return stage == self.recognition_stage and status == "completed"
+
     def _prepare_to_redirect_to_next_stage(self):
         self.redisAPI.register_verified_patterns(self.object.pk, len(self._faces_amounts))
         self.redisAPI.set_single_face_central(album_pk=self.object.pk, total_patterns_amount=len(self._faces_amounts),
-                                               skip=self._verified_patterns_amount)
+                                              skip=self._verified_patterns_amount)
         self._set_correct_status(all_patterns_have_single_faces=True)
 
     def get_context_data(self, **kwargs):
@@ -495,6 +515,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
         self._recalculate_patterns_centers(old_patterns_amount)
         self.redisAPI.register_verified_patterns(self.object.pk, old_patterns_amount)
         self._set_correct_status()
+
         self._another_album_processed = Faces.objects.filter(
             photo__album__owner__username_slug=self.object.owner.username_slug,
         ).exclude(photo__album__pk=self.object.pk).exists()
@@ -532,11 +553,11 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
                 patterns_amount += 1
                 faces_amount = self.redisAPI.get_pattern_faces_amount(self.object.pk, i)
                 self.redisAPI.set_pattern_faces_amount(album_pk=self.object.pk, pattern_index=patterns_amount,
-                                                        faces_amount=faces_amount)
+                                                       faces_amount=faces_amount)
                 for k, face_name in enumerate(faces_to_remove):
                     # Moving face's data in redis
                     self.redisAPI.move_face_data(album_pk=self.object.pk, face_name=face_name,
-                                                  from_pattern=i, to_pattern=patterns_amount)
+                                                 from_pattern=i, to_pattern=patterns_amount)
 
                     # Moving face image in temp directory
                     if k == 0:
@@ -563,7 +584,7 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
 
             # Renumbering redis data
             self.redisAPI.renumber_faces_in_patterns(album_pk=self.object.pk, pattern_index=i,
-                                                      faces_amount=faces_amount)
+                                                     faces_amount=faces_amount)
 
     def _recalculate_patterns_centers(self, verified_patterns_amount):
         for i in range(1, verified_patterns_amount + 1):
@@ -733,7 +754,6 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
         self._get_object_and_make_checks()
 
         if not self.redisAPI.check_any_tech_matches(self.object.pk):
-            self._set_correct_status()
             return redirect('manual_matching', album_slug=self.object.slug)
 
         self._get_matches_urls()
@@ -745,6 +765,16 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
         self._get_matches_urls()
 
         return super().post(request, *args, **kwargs)
+
+    def _check_recognition_stage(self, waiting_task):
+        if self.request.method == 'GET':
+            stage = self.redisAPI.get_stage_or_404(self.object.pk)
+            status = self.redisAPI.get_status(self.object.pk)
+            if not (stage == self.recognition_stage and status == "processing" or
+                    stage in (self.recognition_stage - 1, self.recognition_stage) and status == "completed"):
+                raise Http404
+        else:
+            super()._check_recognition_stage(waiting_task)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()

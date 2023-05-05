@@ -1,7 +1,7 @@
 from .functional_api import RedisAPIStage, RedisAPIStatus, RedisAPIProcessedPhotos, RedisAPIAlbumDataChecker, \
     RedisAPIFullAlbumPeopleDataGetter, RedisAPIPhotoDataGetter, RedisAPIPersonDataCreator, RedisAPIPersonDataSetter, \
     RedisAPIFinished, RedisAPIMatchesSetter, RedisAPIPatternDataSetter, RedisAPIPhotoSlug, RedisAPIPhotoDataSetter, \
-    RedisAPISearchSetter
+    RedisAPISearchSetter, RedisAPIAlbumDataSetter, RedisAPIMatchesChecker
 
 
 class RedisAPIBaseHandler(
@@ -36,6 +36,7 @@ class RedisAPIStage3Handler(
     RedisAPIBaseHandler,
     RedisAPIPhotoDataGetter,
     RedisAPIPatternDataSetter,
+    RedisAPIAlbumDataSetter,
 ):
     pass
 
@@ -43,6 +44,7 @@ class RedisAPIStage3Handler(
 class RedisAPIStage6Handler(
     RedisAPIBaseLateStageHandler,
     RedisAPIMatchesSetter,
+    RedisAPIMatchesChecker,
 ):
     pass
 

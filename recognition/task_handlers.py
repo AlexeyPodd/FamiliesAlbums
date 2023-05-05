@@ -172,6 +172,9 @@ class RelateFacesHandler(BaseRecognitionHandler):
         self._print_pattern_faces()
         super().handle()
 
+        if self._all_patterns_have_single_faces():
+            self._set_patterns_to_redis_and_set_next_stage_completed()
+
     def _get_queryset(self):
         if self._queryset is None:
             self._queryset = Photos.objects.filter(album__pk=self._album_pk, is_private=False)
@@ -230,6 +233,17 @@ class RelateFacesHandler(BaseRecognitionHandler):
                 save_path = os.path.join(self._path, str(i), f'{j}.jpg')
                 pil_image.save(save_path)
 
+    def _all_patterns_have_single_faces(self):
+        return all(map(lambda p: len(p) == 1, self._patterns))
+
+    def _set_patterns_to_redis_and_set_next_stage_completed(self):
+        self.redisAPI.register_verified_patterns(self._album_pk, len(self._patterns))
+        self.redisAPI.set_single_face_central(album_pk=self._album_pk,
+                                              total_patterns_amount=len(self._patterns),
+                                              skip=0)
+        self.redisAPI.set_stage(album_pk=self._album_pk, stage=4)
+        self.redisAPI.set_status(album_pk=self._album_pk, status="completed")
+
 
 class ComparingExistingAndNewPeopleHandler(BaseRecognitionLateStageHandler):
     """Class for handling uniting people of processing album with previously created people of this user."""
@@ -250,6 +264,9 @@ class ComparingExistingAndNewPeopleHandler(BaseRecognitionLateStageHandler):
         self._connect_people_in_pairs()
         self._save_united_people_data_to_redis()
         super().handle()
+
+        if not self.redisAPI.check_any_tech_matches(self._album_pk):
+            self._set_next_stage_completed()
 
     def _get_existing_people_data_from_db(self):
         queryset = Faces.objects.filter(
@@ -326,6 +343,10 @@ class ComparingExistingAndNewPeopleHandler(BaseRecognitionLateStageHandler):
 
     def _save_united_people_data_to_redis(self):
         self.redisAPI.set_matching_people(self._album_pk, self._pairs)
+
+    def _set_next_stage_completed(self):
+        self.redisAPI.set_stage(album_pk=self._album_pk, stage=7)
+        self.redisAPI.set_status(album_pk=self._album_pk, status="completed")
 
 
 class SavingAlbumRecognitionDataToDBHandler(BaseRecognitionLateStageHandler):
