@@ -587,11 +587,12 @@ class AlbumVerifyPatternsView(LoginRequiredMixin, FormMixin, ManualRecognitionMi
                                                      faces_amount=faces_amount)
 
     def _recalculate_patterns_centers(self, verified_patterns_amount):
-        for i in range(1, verified_patterns_amount + 1):
-            # If pattern was not verified previously, but did now;
-            # and it is not have one face (form wouldn't add fields)
+        for i in range(self._verified_patterns_amount + 1, verified_patterns_amount + 1):
+            # If pattern has more than one face (form wouldn't add fields)
             if self.formset.forms[i-1].fields:
                 self.redisAPI.recalculate_pattern_center(self.object.pk, i)
+            else:
+                self.redisAPI.set_single_face_central_in_pattern(self.object.pk, i)
 
     def _set_correct_status(self, all_patterns_have_single_faces=False):
         if self.redisAPI.get_stage(self.object.pk) == self.recognition_stage - 1:
@@ -831,7 +832,7 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
         for pair, to_delete in form.cleaned_data.items():
             if not to_delete:
                 _, new_per_ind, old_per_pk = pair.split('_')
-                self.redisAPI.set_verified_pair(self.object.pk, new_per_ind, old_per_pk)
+                self.redisAPI.set_new_pair(self.object.pk, new_per_ind, old_per_pk)
 
     def _set_correct_status(self):
         if hasattr(self, '_new_singe_people_present') and hasattr(self, '_old_singe_people_present') and\

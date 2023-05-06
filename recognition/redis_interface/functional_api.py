@@ -283,11 +283,15 @@ class RedisAPIPatternDataSetter:
                 redis_instance.expire(f"album_{album_pk}_pattern_{pattern_index}", REDIS_DATA_EXPIRATION_SECONDS)
                 break
 
-    @staticmethod
-    def set_single_face_central(album_pk: int, total_patterns_amount: int, skip: int):
+    @classmethod
+    def set_single_face_central(cls, album_pk: int, total_patterns_amount: int, skip: int):
         for i in range(skip + 1, total_patterns_amount + 1):
-            redis_instance.hset(f"album_{album_pk}_pattern_{i}", "central_face", "face_1")
-            redis_instance.expire(f"album_{album_pk}_pattern_{i}", REDIS_DATA_EXPIRATION_SECONDS)
+            cls.set_single_face_central_in_pattern(album_pk, i)
+
+    @staticmethod
+    def set_single_face_central_in_pattern(album_pk: int, pattern_index: int):
+        redis_instance.hset(f"album_{album_pk}_pattern_{pattern_index}", "central_face", "face_1")
+        redis_instance.expire(f"album_{album_pk}_pattern_{pattern_index}", REDIS_DATA_EXPIRATION_SECONDS)
 
 
 class RedisAPIPatternDataGetter:
@@ -555,16 +559,6 @@ class RedisAPIMatchesGetter:
 
         return tuple(zip(new_people_inds, face_urls))
 
-    @staticmethod
-    def get_old_paired_people_pks(album_pk: int):
-        paired = []
-        i = 1
-        while redis_instance.exists(f"album_{album_pk}_person_{i}"):
-            if redis_instance.hexists(f"album_{album_pk}_person_{i}", "real_pair"):
-                paired.append(int(redis_instance.hget(f"album_{album_pk}_person_{i}", "real_pair")[7:]))
-            i += 1
-        return paired
-
 
 class RedisAPIMatchesSetter:
     @staticmethod
@@ -572,10 +566,6 @@ class RedisAPIMatchesSetter:
         for old_per, new_per in pairs:
             redis_instance.hset(f"album_{album_pk}_person_{new_per.redis_indx}",
                                 "tech_pair", f"person_{old_per.pk}")
-
-    @staticmethod
-    def set_verified_pair(album_pk: int, new_per_ind, old_per_pk):
-        redis_instance.hset(f"album_{album_pk}_person_{new_per_ind}", "real_pair", f"person_{old_per_pk}")
 
     @staticmethod
     def set_new_pair(album_pk: int, new_person_ind: int, old_person_pk: int):
