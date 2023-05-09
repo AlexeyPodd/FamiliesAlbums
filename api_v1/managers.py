@@ -4,6 +4,7 @@ from mainapp.models import Photos
 from photoalbums.settings import MEDIA_ROOT
 from recognition.models import Faces, People
 from recognition.redis_interface.functional_api import RedisAPIStage, RedisAPIStatus
+from recognition.redis_interface.task_handlers_api import RedisAPIBaseHandler
 from recognition.redis_interface.views_api import RedisAPIStage2View, RedisAPIStage4View, RedisAPIStage5View, \
     RedisAPIStage7View, RedisAPIStage8View
 from recognition.supporters import DataDeletionSupporter
@@ -12,9 +13,15 @@ from recognition.utils import set_album_photos_processed
 
 
 class AlbumProcessingManager:
+    recognition_stage = None
+    redisAPI = None
+
     def __init__(self, data_collector, user):
         self.data_collector = data_collector
         self.user = user
+
+        if self.redisAPI is None or self.recognition_stage is None:
+            raise NotImplementedError
 
     def run(self):
         raise NotImplementedError
@@ -37,6 +44,9 @@ class AlbumProcessingManager:
 
 
 class StartProcessingManager(AlbumProcessingManager):
+    recognition_stage = 0
+    redisAPI = RedisAPIBaseHandler
+
     def run(self):
         RedisAPIStage.set_stage(album_pk=self.data_collector.album_pk, stage=0)
         RedisAPIStatus.set_status(album_pk=self.data_collector.album_pk, status="processing")
@@ -172,7 +182,7 @@ class GroupPatternsManager(AlbumProcessingManager):
         self._choose_celery_task_and_start_it()
 
     def _group_patterns_into_people(self):
-        for i, person_patterns in enumerate(self.data_collector.data, 1):
+        for i, person_patterns in enumerate(next(iter(self.data_collector.data.values())), 1):
             self.redisAPI.set_created_person(album_pk=self.data_collector.album_pk, pattern_name=person_patterns[0])
             for j, pattern in enumerate(person_patterns[1:], 2):
                 self.redisAPI.set_pattern_to_person(album_pk=self.data_collector.album_pk,

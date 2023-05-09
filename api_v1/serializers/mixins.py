@@ -46,11 +46,19 @@ class UserMixin:
 class AlbumProcessingMixin:
     def __init__(self, *args, **kwargs):
         data_collector = kwargs.pop('data_collector')
-        self.stage = data_collector.stage
+        self.actual_stage = data_collector.stage
         self.status = data_collector.status
+        self.finished_status = data_collector.finished
         super().__init__(*args, **kwargs)
 
     def validate(self, attrs):
-        if self.status == 'processing':
+        if self.finished_status:
+            raise ValidationError('Processing of album was finished.')
+
+        if self.status != 'completed':
             raise ValidationError('Processing should be completed before receiving next stage data.')
+
+        if self.stage != self.actual_stage + 1:
+            raise ValidationError('Wrong serializer called.')
+
         return super().validate(attrs)

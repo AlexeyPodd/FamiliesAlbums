@@ -20,10 +20,13 @@ from photoalbums.settings import BASE_DIR
 from recognition.models import People, Faces
 from recognition.redis_interface.functional_api import RedisAPIPhotoDataGetter
 from .data_collectors import RecognitionStateCollector
-from .managers import StartProcessingManager
+from .managers import StartProcessingManager, VerifyFramesManager, VerifyPatternsManager, GroupPatternsManager, \
+    VerifyTechPeopleMatchesManager, ManualMatchingPeopleManager
 from .permissions import AlbumsPermission, PhotosPermission, IsOwner
 from .serializers.auth_serializers import AnotherUserSerializer
-from .serializers.rec_processing_serializers import AlbumProcessingInfoSerializer, StartAlbumProcessingSerializer
+from .serializers.rec_processing_serializers import AlbumProcessingInfoSerializer, StartAlbumProcessingSerializer, \
+    VerifyFramesSerializer, VerifyPatternsSerializer, GroupPatternsSerializer, VerifyTechPeopleMatchesSerializer, \
+    ManualMatchingPeopleSerializer
 from .serializers.serializers import MainPageSerializer, AlbumsListSerializer, AlbumPostAndDetailSerializer, \
     PhotoDetailSerializer, PhotosListSerializer, PeopleListSerializer, PersonSerializer, RecognitionAlbumsSerializer
 from mainapp.models import Albums, Photos
@@ -360,6 +363,23 @@ def return_photo_with_framed_faces(request):
 class AlbumProcessingAPIView(APIView):
     permission_classes = (IsOwner,)
     data_collector_class = RecognitionStateCollector
+    manager_classes = {manager_class.recognition_stage: manager_class for manager_class in [
+        StartProcessingManager,
+        VerifyFramesManager,
+        VerifyPatternsManager,
+        GroupPatternsManager,
+        VerifyTechPeopleMatchesManager,
+        ManualMatchingPeopleManager,
+    ]}
+    # Serializer classes and data keys they expect
+    post_serializer_classes = {
+        'start': StartAlbumProcessingSerializer,
+        'photos_faces': VerifyFramesSerializer,
+        'patterns': VerifyPatternsSerializer,
+        'people_patterns': GroupPatternsSerializer,
+        'verified_pairs': VerifyTechPeopleMatchesSerializer,
+        'manual_pairs': ManualMatchingPeopleSerializer,
+    }
 
     def get(self, request, *args, **kwargs):
         try:
@@ -387,7 +407,7 @@ class AlbumProcessingAPIView(APIView):
 
         data_collector.data = serializer.validated_data
 
-        manager = self.get_manager_class(data_collector.stage)(data_collector, user=request.user)
+        manager = self.get_manager(data_collector, user=request.user)
         manager.run()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -407,9 +427,18 @@ class AlbumProcessingAPIView(APIView):
             if data is None or data_collector is None:
                 raise ValidationError("Serializer need data to validate and source of stage and status processing")
 
-            if 'start' in data.keys():
-                return StartAlbumProcessingSerializer(data=data, data_collector=data_collector)
+            serializer_class = self.post_serializer_classes.get(next(iter(data.keys())))
+            if serializer_class is None:
+                raise ValidationError("Wrong data key. Can't get serializer.")
 
-    def get_manager_class(self, stage):
-        if stage == 1:
-            return StartProcessingManager
+            return serializer_class(data=data, data_collector=data_collector)
+
+    def get_manager(self, data_collector, user):
+        manager_class_stage = data_collector.stage + 1
+        if data_collector.data.get('start', False):
+            manager_class_stage = 0
+
+        try:
+            return self.manager_classes[manager_class_stage](data_collector, user)
+        except KeyError:
+            raise ValidationError("Invalid stage for getting album process manager.")
