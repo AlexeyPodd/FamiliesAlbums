@@ -80,7 +80,7 @@ class VerifyFramesManager(AlbumProcessingManager):
         set_album_photos_processed(album_pk=self.data_collector.album_pk, status=True)
 
     def _delete_wrong_data(self, photo):
-        for face_number in self.data_collector.data[photo.slug]:
+        for face_number in self.data_collector.data.get(photo.slug, []):
             face_name = f"face_{face_number}"
             self.redisAPI.del_face(photo.pk, face_name)
 

@@ -46,6 +46,7 @@ class UserMixin:
 class AlbumProcessingMixin:
     def __init__(self, *args, **kwargs):
         data_collector = kwargs.pop('data_collector')
+        self.album_pk = data_collector.album_pk
         self.actual_stage = data_collector.stage
         self.status = data_collector.status
         self.finished_status = data_collector.finished
@@ -54,6 +55,9 @@ class AlbumProcessingMixin:
     def validate(self, attrs):
         if self.finished_status:
             raise ValidationError('Processing of album was finished.')
+
+        if self.status is None:
+            raise ValidationError('This album is not processing now.')
 
         if self.status != 'completed':
             raise ValidationError('Processing should be completed before receiving next stage data.')

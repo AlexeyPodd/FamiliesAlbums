@@ -187,6 +187,10 @@ class RedisAPIPhotoSlug:
         redis_instance.expire(f"album_{album_pk}_photos", REDIS_DATA_EXPIRATION_SECONDS)
 
     @staticmethod
+    def get_photo_slugs(album_pk: int):
+        return redis_instance.lrange(f"album_{album_pk}_photos", 0, -1)
+
+    @staticmethod
     def get_first_photo_slug(album_pk: int):
         return redis_instance.lindex(f"album_{album_pk}_photos", 0)
 
