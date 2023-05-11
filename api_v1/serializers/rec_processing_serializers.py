@@ -3,17 +3,26 @@ import re
 from rest_framework import serializers
 
 from mainapp.models import Photos
+from recognition.models import People
 from recognition.redis_interface.functional_api import RedisAPIPhotoSlug, RedisAPIPhotoDataGetter, \
-    RedisAPIPatternDataGetter, RedisAPIPatternDataChecker
+    RedisAPIPatternDataGetter, RedisAPIPatternDataChecker, RedisAPIMatchesGetter, RedisAPIPersonDataChecker
 from .fields import DataOutputField
 from .mixins import AlbumProcessingMixin
+
+
+# Precompiling regexes for validating data keys
+pair_regex = re.compile(r'pair_[1-9][0-9]*')
+person_regex = re.compile(r'person_[1-9][0-9]*')
+pattern_regex = re.compile(r'pattern_[1-9][0-9]*')
+face_regex = re.compile(r'face_[1-9][0-9]*')
 
 
 # Serializer for GET requests
 class AlbumProcessingInfoSerializer(serializers.Serializer):
     stage = serializers.IntegerField(read_only=True)
     status = serializers.CharField(read_only=True)
-    data_output = DataOutputField(read_only=True)
+    finished = serializers.CharField(read_only=True)
+    data = serializers.ReadOnlyField()
 
 
 # Serializers below are for POST requests
@@ -57,9 +66,9 @@ class VerifyFramesSerializer(AlbumProcessingMixin, serializers.Serializer):
         photos = Photos.objects.filter(slug__in=photo_slugs)
         for photo in photos:
             face_numbers = data_dict[photo.slug]
-            if any(map(lambda x: x < 1 or x > RedisAPIPhotoDataGetter.get_faces_amount_in_photo(photo.pk),
-                       face_numbers)):
-                raise serializers.ValidationError("Invalid face numbers")
+            for face_number in face_numbers:
+                if face_number < 1 or face_number > RedisAPIPhotoDataGetter.get_faces_amount_in_photo(photo.pk):
+                    raise serializers.ValidationError(f"Invalid face number: {face_number}")
 
     @staticmethod
     def _make_unique_face_numbers(data_dict):
@@ -86,26 +95,26 @@ class VerifyPatternsSerializer(AlbumProcessingMixin, serializers.Serializer):
         return data_dict
 
     def _validate_patterns_names(self, data_dict):
-        regex = re.compile(r'pattern_[1-9][0-9]*')
-        if not all(map(lambda s: re.fullmatch(regex, s), data_dict.keys())):
-            raise serializers.ValidationError("Invalid patterns names")
+        for pattern_name in data_dict.keys():
+            if not re.fullmatch(pattern_regex, pattern_name):
+                raise serializers.ValidationError(f"Invalid pattern name: {pattern_name}")
 
-        if not all(map(lambda s: RedisAPIPatternDataGetter.get_pattern_faces_amount(self.album_pk, int(s[8:])),
-                       data_dict.keys())):
-            raise serializers.ValidationError("Pattern does not exist or invalid")
+            if not RedisAPIPatternDataGetter.get_pattern_faces_amount(self.album_pk, int(pattern_name[8:])):
+                raise serializers.ValidationError(f"Pattern {pattern_name} does not exist or invalid")
 
         if RedisAPIPatternDataGetter.get_pattern_faces_amount(self.album_pk, len(data_dict) + 1):
             raise serializers.ValidationError("Not all patterns data received")
 
     def _validate_faces_names(self, data_dict):
-        regex = re.compile(r'face_[1-9][0-9]*')
         for pattern_name, separated_faces_list in data_dict.items():
             faces_names = [face_name for lst in separated_faces_list for face_name in lst]
-            if not all(map(lambda f: re.fullmatch(regex, f), faces_names)):
-                raise serializers.ValidationError("Invalid faces names")
+            for face_name in faces_names:
+                if not re.fullmatch(face_regex, face_name):
+                    raise serializers.ValidationError(f"Invalid face name: {face_name}")
+
+            max_face_number = max(map(lambda s: int(s[5:]), faces_names))
 
             # Validating uniqueness and correct numbering
-            max_face_number = max(map(lambda s: int(s[5:]), faces_names))
             if not len(faces_names) == len(set(faces_names)) == max_face_number:
                 raise serializers.ValidationError("Improper faces numbering")
 
@@ -127,10 +136,10 @@ class GroupPatternsSerializer(AlbumProcessingMixin, serializers.Serializer):
     )
 
     def validate_people_patterns(self, lst):
-        regex = re.compile(r'pattern_[1-9][0-9]*')
         pattern_list = [pattern for group in lst for pattern in group]
-        if not all(map(lambda p: re.fullmatch(regex, p), pattern_list)):
-            raise serializers.ValidationError("Invalid pattern names")
+        for pattern_name in pattern_list:
+            if not re.fullmatch(pattern_regex, pattern_name):
+                raise serializers.ValidationError(f"Invalid pattern name: {pattern_name}")
 
         pattern_list.sort(key=lambda p: int(p[8:]))
         max_pattern_ind = int(pattern_list[-1][8:])
@@ -150,19 +159,81 @@ class GroupPatternsSerializer(AlbumProcessingMixin, serializers.Serializer):
 class VerifyTechPeopleMatchesSerializer(AlbumProcessingMixin, serializers.Serializer):
     stage = 7
     verified_pairs = serializers.DictField(
-        allow_empty=False,
-        child=serializers.ListField(
+        child=serializers.DictField(
             allow_empty=False,
-            child=serializers.CharField(),
+            child=serializers.IntegerField(),
         ),
     )
 
     def validate_verified_pairs(self, data_dict):
-        self._validate_pairs_naming(data_dict)
+        self._validate_pairs_names(data_dict)
         self._validate_pairs_data(data_dict)
         return data_dict
+
+    def _validate_pairs_names(self, data_dict):
+        for pair_name in data_dict.keys():
+            if not re.fullmatch(pair_regex, pair_name):
+                raise serializers.ValidationError(f"Invalid pair name: {pair_name}")
+
+        if data_dict:
+            max_pair_number = max(map(lambda s: int(s[5:]), data_dict.keys()))
+            if max_pair_number > len(RedisAPIMatchesGetter.get_matching_people(self.album_pk)[0]):
+                raise serializers.ValidationError(f"Wrong number of pair: {max_pair_number}")
+
+    def _validate_pairs_data(self, data_dict):
+        teach_matches = dict(zip(*RedisAPIMatchesGetter.get_matching_people(self.album_pk)))
+        for pair in data_dict.values():
+            if len(pair) != 1:
+                raise serializers.ValidationError(f"pair must be dict with one key-value pair")
+
+            new_per_name = next(iter(pair.keys()))
+            old_per_pk = next(iter(pair.values()))
+
+            if not re.fullmatch(person_regex, new_per_name):
+                raise serializers.ValidationError(f"Invalid new person name: {new_per_name}")
+
+            if not RedisAPIPersonDataChecker.check_person_exists(self.album_pk, int(new_per_name[7:])):
+                raise serializers.ValidationError(f"person {new_per_name} does not exists")
+
+            if teach_matches.get(old_per_pk, -1) != int(new_per_name[7:]):
+                raise serializers.ValidationError(f"no such tech pair: {pair}")
 
 
 class ManualMatchingPeopleSerializer(AlbumProcessingMixin, serializers.Serializer):
     stage = 8
-    manual_pairs = serializers.DictField(child=serializers.ListField(child=serializers.CharField()))
+    manual_pairs = serializers.DictField(
+        child=serializers.IntegerField(),
+    )
+
+    def validate_manual_pairs(self, data_dict):
+        self._validate_new_ppl_names(data_dict)
+        self._validate_old_ppl_pks(data_dict)
+        return data_dict
+
+    def _validate_new_ppl_names(self, data_dict):
+        new_ppl_actual_indexes = tuple(next(zip(*RedisAPIMatchesGetter.get_new_unpaired_people(self.album_pk))))
+
+        for person_name in data_dict.keys():
+            if not re.fullmatch(person_regex, person_name):
+                raise serializers.ValidationError(f"Invalid person name: {person_name}")
+
+            if int(person_name[7:]) not in new_ppl_actual_indexes:
+                raise serializers.ValidationError(f"{person_name} not in unpaired people")
+
+    def _validate_old_ppl_pks(self, data_dict):
+        pks = tuple(data_dict.values())
+
+        if not len(pks) == len(set(pks)):
+            raise serializers.ValidationError("multiple pairing with same old people")
+
+        existing_old_people_pks = [person.pk for person in People.objects.filter(owner=self.context['user'])]
+        not_existing_people_pks = set(pks) - set(existing_old_people_pks)
+        if not_existing_people_pks:
+            raise serializers.ValidationError(f"not existing old people pks: {not_existing_people_pks}")
+
+        paired_old_people = RedisAPIMatchesGetter.get_old_paired_people(self.album_pk)
+        unpaired_old_people = set(existing_old_people_pks) - set(paired_old_people)
+
+        again_pairing_old_people = set(pks) - unpaired_old_people
+        if again_pairing_old_people:
+            raise serializers.ValidationError(f"trying to pair already paired: {again_pairing_old_people}")

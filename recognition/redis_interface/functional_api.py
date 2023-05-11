@@ -524,6 +524,12 @@ class RedisAPIPersonDataSetter:
                               REDIS_DATA_EXPIRATION_SECONDS)
 
 
+class RedisAPIPersonDataChecker:
+    @staticmethod
+    def check_person_exists(album_pk: int, person_index: int):
+        return redis_instance.exists(f"album_{album_pk}_person_{person_index}")
+
+
 class RedisAPIMatchesGetter:
     @staticmethod
     def get_matching_people(album_pk: int):

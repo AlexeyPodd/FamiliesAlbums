@@ -794,7 +794,9 @@ class VerifyTechPeopleMatchesView(LoginRequiredMixin, FormMixin, ManualRecogniti
         face_urls = [f"/media/temp_photos/album_{self.object.pk}/patterns/{x}/1.jpg" for x in patt_inds]
 
         # old people
-        old_face_urls = [reverse('get_face_img') + '?face=' + People.objects.get(pk=x).patterns_set.first().faces_set.first().slug for x in old_people_pks]
+        old_people = People.objects.filter(pk__in=old_people_pks).prefetch_related('patterns_set__faces_set')
+        old_face_urls = [reverse('get_face_img') + '?face=' +
+                         old_people.get(pk=x).patterns_set.first().faces_set.first().slug for x in old_people_pks]
 
         self._matches_urls = tuple(zip(new_people_inds, old_people_pks, face_urls, old_face_urls))
 
@@ -910,7 +912,7 @@ class ManualMatchingPeopleView(LoginRequiredMixin, FormMixin, ManualRecognitionM
         return context
 
     def _get_old_ppl(self):
-        queryset = People.objects.prefetch_related('patterns_set__faces_set').filter(owner__pk=self.object.owner.pk)
+        queryset = People.objects.prefetch_related('patterns_set__faces_set').filter(owner=self.object.owner)
 
         # Collecting already paired people with created people of this album
         paired = self.redisAPI.get_old_paired_people(self.object.pk)

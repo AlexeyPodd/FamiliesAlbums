@@ -182,7 +182,7 @@ class GroupPatternsManager(AlbumProcessingManager):
         self._choose_celery_task_and_start_it()
 
     def _group_patterns_into_people(self):
-        for i, person_patterns in enumerate(next(iter(self.data_collector.data.values())), 1):
+        for i, person_patterns in enumerate(self.data_collector.data, 1):
             self.redisAPI.set_created_person(album_pk=self.data_collector.album_pk, pattern_name=person_patterns[0])
             for j, pattern in enumerate(person_patterns[1:], 2):
                 self.redisAPI.set_pattern_to_person(album_pk=self.data_collector.album_pk,
@@ -202,9 +202,10 @@ class VerifyTechPeopleMatchesManager(AlbumProcessingManager):
             self._start_celery_task(next_stage=9)
 
     def _register_matches_to_redis(self):
-        for new_per_name, old_per_pk in self.data_collector.data.values():
-            new_per_ind = new_per_name[7:]
-            self.redisAPI.set_new_pair(self.data_collector.album_pk, new_per_ind, old_per_pk)
+        for pair in self.data_collector.data.values():
+            for new_per_name, old_per_pk in pair.items():
+                new_per_ind = int(new_per_name[7:])
+                self.redisAPI.set_new_pair(self.data_collector.album_pk, new_per_ind, old_per_pk)
 
     def _check_pairing_possibility(self):
         return self._check_new_single_people() and self._check_old_single_people()
@@ -235,6 +236,6 @@ class ManualMatchingPeopleManager(AlbumProcessingManager):
         self._start_celery_task(next_stage=9)
 
     def _register_matches_to_redis(self):
-        for new_per_name, old_per_pk in self.data_collector.data.values():
+        for new_per_name, old_per_pk in self.data_collector.data.items():
             new_per_ind = new_per_name[7:]
             self.redisAPI.set_new_pair(self.data_collector.album_pk, new_per_ind, old_per_pk)

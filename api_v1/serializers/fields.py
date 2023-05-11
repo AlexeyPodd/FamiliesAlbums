@@ -17,5 +17,8 @@ class MiniatureSlugRelatedField(serializers.SlugRelatedField):
 
 
 class DataOutputField(serializers.Field):
+    def get_attribute(self, instance):
+        pass
+
     def to_representation(self, value):
         pass

@@ -54,15 +54,15 @@ class AlbumProcessingMixin:
 
     def validate(self, attrs):
         if self.finished_status:
-            raise ValidationError('Processing of album was finished.')
+            raise ValidationError('Processing of album was finished')
 
         if self.status is None:
-            raise ValidationError('This album is not processing now.')
+            raise ValidationError('This album is not processing now')
 
         if self.status != 'completed':
-            raise ValidationError('Processing should be completed before receiving next stage data.')
+            raise ValidationError('Processing should be completed before receiving next stage data')
 
         if self.stage != self.actual_stage + 1:
-            raise ValidationError('Wrong serializer called.')
+            raise ValidationError('received data does not correspond to the current stage of recognition')
 
         return super().validate(attrs)

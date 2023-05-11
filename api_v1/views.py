@@ -387,7 +387,7 @@ class AlbumProcessingAPIView(APIView):
         except ObjectDoesNotExist:
             return Response({'error': 'Album not found'})
 
-        data_collector = self.data_collector_class(album.pk)
+        data_collector = self.data_collector_class(album.pk, request=request)
         data_collector.collect()
 
         serializer = self.get_serializer(instance=data_collector)
@@ -405,7 +405,7 @@ class AlbumProcessingAPIView(APIView):
         serializer = self.get_serializer(data=request.data, data_collector=data_collector)
         serializer.is_valid(raise_exception=True)
 
-        data_collector.data = serializer.validated_data
+        data_collector.data = next(iter(serializer.validated_data.values()))
 
         manager = self.get_manager(data_collector, user=request.user)
         manager.run()
@@ -431,7 +431,7 @@ class AlbumProcessingAPIView(APIView):
             if serializer_class is None:
                 raise ValidationError("Wrong data key. Can't get serializer.")
 
-            return serializer_class(data=data, data_collector=data_collector)
+            return serializer_class(data=data, data_collector=data_collector, context={'user': self.request.user})
 
     def get_manager(self, data_collector, user):
         manager_class_stage = data_collector.stage + 1
