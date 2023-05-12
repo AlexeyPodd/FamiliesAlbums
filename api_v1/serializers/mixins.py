@@ -1,4 +1,4 @@
-from rest_framework.exceptions import ValidationError
+from rest_framework.serializers import ValidationError
 
 from mainapp.models import Albums
 
@@ -50,9 +50,10 @@ class AlbumProcessingMixin:
         self.actual_stage = data_collector.stage
         self.status = data_collector.status
         self.finished_status = data_collector.finished
+        self._check_relevance()
         super().__init__(*args, **kwargs)
 
-    def validate(self, attrs):
+    def _check_relevance(self):
         if self.finished_status:
             raise ValidationError('Processing of album was finished')
 
@@ -64,5 +65,3 @@ class AlbumProcessingMixin:
 
         if self.stage != self.actual_stage + 1:
             raise ValidationError('received data does not correspond to the current stage of recognition')
-
-        return super().validate(attrs)

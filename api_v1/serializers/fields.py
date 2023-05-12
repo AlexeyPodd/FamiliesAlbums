@@ -14,11 +14,3 @@ class MiniatureSlugRelatedField(serializers.SlugRelatedField):
             return
 
         return queryset.filter(album__slug=view.kwargs.get('album_slug'))
-
-
-class DataOutputField(serializers.Field):
-    def get_attribute(self, instance):
-        pass
-
-    def to_representation(self, value):
-        pass

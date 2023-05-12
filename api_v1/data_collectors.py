@@ -1,11 +1,12 @@
 from api_v1.data_extractors import FacesInPhotosExtractor, PatternsFacesExtractor, PatternsForGroupingExtractor, \
-    TechPairsExtractor, SinglePeopleExtractor
+    TechPairsExtractor, SinglePeopleExtractor, ProcessedPhotosAmountExtractor
 from recognition.redis_interface.functional_api import RedisAPIStage, RedisAPIStatus, RedisAPIFinished
 
 
 class RecognitionStateCollector:
     """Base cass for collecting data of album processing."""
     data_extractors = {extractor.completed_stage: extractor for extractor in [
+        ProcessedPhotosAmountExtractor,
         FacesInPhotosExtractor,
         PatternsFacesExtractor,
         PatternsForGroupingExtractor,
@@ -22,8 +23,15 @@ class RecognitionStateCollector:
         self.data = None
 
     def collect(self):
-        if self.status != "completed" or self.finished or self.stage not in self.data_extractors:
+        if self.finished:
             return
 
-        extractor = self.data_extractors[self.stage](self.album_pk, self.request)
+        if isinstance(self.stage, int) and self.stage <= 1 and self.status != "completed":
+            extractor_class = self.data_extractors[0]
+        elif self.status == "completed" and self.stage in self.data_extractors:
+            extractor_class = self.data_extractors[self.stage]
+        else:
+            return
+
+        extractor = extractor_class(self.album_pk, self.request)
         self.data = extractor.get_data()

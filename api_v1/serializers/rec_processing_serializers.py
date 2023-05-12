@@ -6,7 +6,6 @@ from mainapp.models import Photos
 from recognition.models import People
 from recognition.redis_interface.functional_api import RedisAPIPhotoSlug, RedisAPIPhotoDataGetter, \
     RedisAPIPatternDataGetter, RedisAPIPatternDataChecker, RedisAPIMatchesGetter, RedisAPIPersonDataChecker
-from .fields import DataOutputField
 from .mixins import AlbumProcessingMixin
 
 
@@ -35,10 +34,9 @@ class StartAlbumProcessingSerializer(AlbumProcessingMixin, serializers.Serialize
             raise serializers.ValidationError("start parameter must be set True.")
         return value
 
-    def validate(self, attrs):
+    def _check_relevance(self):
         if self.status == 'processing':
             raise serializers.ValidationError('Processing should be completed before starting over.')
-        return attrs
 
 
 class VerifyFramesSerializer(AlbumProcessingMixin, serializers.Serializer):
@@ -58,7 +56,7 @@ class VerifyFramesSerializer(AlbumProcessingMixin, serializers.Serializer):
         slugs = set(data_dict.keys())
         redis_slugs = set(RedisAPIPhotoSlug.get_photo_slugs(self.album_pk))
         if slugs != redis_slugs:
-            raise serializers.ValidationError("Invalid photos slugs")
+            raise serializers.ValidationError("not all or invalid photo slugs")
 
     @staticmethod
     def _validate_face_numbers(data_dict):
@@ -68,7 +66,7 @@ class VerifyFramesSerializer(AlbumProcessingMixin, serializers.Serializer):
             face_numbers = data_dict[photo.slug]
             for face_number in face_numbers:
                 if face_number < 1 or face_number > RedisAPIPhotoDataGetter.get_faces_amount_in_photo(photo.pk):
-                    raise serializers.ValidationError(f"Invalid face number: {face_number}")
+                    raise serializers.ValidationError(f"Invalid face number: {photo.slug} - {face_number}")
 
     @staticmethod
     def _make_unique_face_numbers(data_dict):
@@ -224,7 +222,7 @@ class ManualMatchingPeopleSerializer(AlbumProcessingMixin, serializers.Serialize
         pks = tuple(data_dict.values())
 
         if not len(pks) == len(set(pks)):
-            raise serializers.ValidationError("multiple pairing with same old people")
+            raise serializers.ValidationError("multiple pairing with same old person")
 
         existing_old_people_pks = [person.pk for person in People.objects.filter(owner=self.context['user'])]
         not_existing_people_pks = set(pks) - set(existing_old_people_pks)

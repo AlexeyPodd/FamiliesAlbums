@@ -38,6 +38,10 @@ class AlbumProcessingManager:
         next_stage = 6 if another_album_processed else 9
         self._start_celery_task(next_stage)
 
+    def _set_processing_status(self):
+        self.redisAPI.set_stage(album_pk=self.data_collector.album_pk, stage=self.recognition_stage)
+        self.redisAPI.set_status(album_pk=self.data_collector.album_pk, status="processing")
+
     def _set_correct_status(self):
         self.redisAPI.set_stage(album_pk=self.data_collector.album_pk, stage=self.recognition_stage)
         self.redisAPI.set_status(album_pk=self.data_collector.album_pk, status="completed")
@@ -58,6 +62,7 @@ class VerifyFramesManager(AlbumProcessingManager):
     redisAPI = RedisAPIStage2View
 
     def run(self):
+        self._set_processing_status()
         photos = Photos.objects.filter(album_id=self.data_collector.album_pk)
         self._update_photos_data(photos)
         self._set_correct_status()
@@ -113,6 +118,7 @@ class VerifyPatternsManager(AlbumProcessingManager):
     redisAPI = RedisAPIStage4View
 
     def run(self):
+        self._set_processing_status()
         path = os.path.join(MEDIA_ROOT, 'temp_photos', f'album_{self.data_collector.album_pk}/patterns')
         patterns_amount = self._split_patterns(path)
         self._renumber_patterns_faces_data_and_files(patterns_amount=patterns_amount, patterns_dir=path)
@@ -178,6 +184,7 @@ class GroupPatternsManager(AlbumProcessingManager):
     redisAPI = RedisAPIStage5View
 
     def run(self):
+        self._set_processing_status()
         self._group_patterns_into_people()
         self._choose_celery_task_and_start_it()
 
@@ -196,6 +203,7 @@ class VerifyTechPeopleMatchesManager(AlbumProcessingManager):
     redisAPI = RedisAPIStage7View
 
     def run(self):
+        self._set_processing_status()
         self._register_matches_to_redis()
         self._set_correct_status()
         if not self._check_pairing_possibility():
@@ -231,6 +239,7 @@ class ManualMatchingPeopleManager(AlbumProcessingManager):
     redisAPI = RedisAPIStage8View
 
     def run(self):
+        self._set_processing_status()
         self._register_matches_to_redis()
         self._set_correct_status()
         self._start_celery_task(next_stage=9)

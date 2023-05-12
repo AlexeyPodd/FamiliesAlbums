@@ -125,3 +125,52 @@ prefix - /api/v1/
 6. *delete from favorites albums or save to own* favorites/albums/\<slug:album_slug\>/ [DELETE, PUT]
 7. *favorites photos* favorites/photos/ [GET, POST]
 8. *delete from favorites photos or save to own* favorites/photos/\<slug:photo_slug\>/ [DELETE, PUT]
+
+**Recognition (processing albums, recognised people, search in other user's photos)**
+
+prefix - /api/v1/recognition/
+1. *user people* people/ [GET]
+2. *user person's detail* people/\<slug:person_slug\> [GET, PUT] (put for name changing)
+3. *processing user's albums info* albums/ [GET]
+4. *management of album processing* processing/\<slug:album_slug\> [GET, POST] (all stages of processing, details below)
+
+**Support images endpoints**
+
+prefix - /api/v1/
+1. *face image* face-img/?face=\<slug:face_slug\>
+2. *photo with framed faces* photo-with-frames/?photo=\<slug:photo_slug\>
+
+#### API Recognition requests and responses
+
+&nbsp;&nbsp;&nbsp;&nbsp;Structure of POST requests that are expected from client to process album, and responses to GET
+request containing information about the current stage of processing.
+
+**Responses:**
+
+&nbsp;&nbsp;&nbsp;&nbsp;Standard response will contain: current stage of processing, status of this stage (processing or
+completed), finished status (does processing of album finished), and additional data (client will use it to form POST
+request with needed data).
+
+Additional data structure:
+ - Stage 0-1, processing - {\"total_photos_amount\": \<int\>, \"processed_photos_amount\": \<int\>}
+ - Stage 1, completed - [{\"photo_slug\": \<slug\>, \"image\": \<url\>, \"faces_amount\": \<int\>}]
+ - Stage 3, completed - [{\"pattern_name\": \"pattern_\<int\>\", \"faces\": [{\"face_name\": \"face_\<int\>\", 
+ - \"image\": \<url\>}]}]
+ - Stage 4, completed - [{\"pattern_name\": \"pattern_\<int\>\", \"image\": \<url\>}]
+ - Stage 6, completed - {\"pair_\<int\>\": {\"new_person\": {\"name\": \"person_\<int\>\", \"image\": \<url\>}, 
+ - \"old_person\": {\"pk\": \<int\>, \"image\": \<url\>}}}
+ - Stage 7, completed - {\"new_people\": [{\"name\": \"person_\<int\>\", \"image\": \<url\>}], \"old_people\":
+ - [{\"pk\": \<int\>, \"image\": \<url\>}]}
+
+**Expected POST requests**
+
+- Stage any, even None, but not processing - {\"Start\": true}
+- Stage 1, completed - {\"photos_faces\": {\<photo_slug\>: [\<int\>]}} - (numbers of recognised faces to delete
+in each photo)
+- Stage 3, completed - {\"patterns\": {\"pattern_\<int\>\": [[\"face_\<int\>\"]]}} - (split pattern by splitting faces 
+into nested list)
+- Stage 4, completed - {\"people_patterns\": [[\"pattern_\<int\>\"]]} - (join pattern to same inner list in nested one)
+- Stage 6, completed - {\"verified_pairs\": {\"pair_\<int\>\": {\"person_\<int\>\": \<int\>}}} - (verify joining same 
+people from this album and previously extracted from another album)
+- Stage 7, completed - {\"manual_pairs\": {\"person_\<int\>\": \<int\>}} - (join same people from this album and 
+previously extracted from another album manually)

@@ -3,14 +3,14 @@ from rest_framework.reverse import reverse
 from mainapp.models import Photos
 from recognition.models import People
 from recognition.redis_interface.functional_api import RedisAPIPhotoSlug, RedisAPIPhotoDataGetter, \
-    RedisAPIAlbumDataGetter, RedisAPIMatchesGetter
+    RedisAPIAlbumDataGetter, RedisAPIMatchesGetter, RedisAPIProcessedPhotos
 
 
 class DataExtractor:
-    completed_stage = 0
+    completed_stage = None
 
     def __init__(self, album_pk, request):
-        if self.completed_stage == 0:
+        if self.completed_stage is None:
             raise NotImplementedError
         self.album_pk = album_pk
         self.request = request
@@ -19,12 +19,22 @@ class DataExtractor:
         raise NotImplementedError
 
 
+class ProcessedPhotosAmountExtractor(DataExtractor):
+    completed_stage = 0
+
+    def get_data(self):
+        processed = RedisAPIProcessedPhotos.get_processed_photos_amount(self.album_pk)
+        total = Photos.objects.filter(album_id=self.album_pk, is_private=False).count()
+        data = {"total_photos_amount": total, "processed_photos_amount": processed}
+        return data
+
+
 class FacesInPhotosExtractor(DataExtractor):
     completed_stage = 1
 
     def get_data(self):
         photo_slugs = RedisAPIPhotoSlug.get_photo_slugs(self.album_pk)
-        image_links = [reverse('photo_with_framed_faces', request=self.request) + '?photo=' + photo_slug
+        image_links = [reverse('api_v1:photo-with-frames', request=self.request) + '?photo=' + photo_slug
                        for photo_slug in photo_slugs]
 
         photos = Photos.objects.filter(slug__in=photo_slugs)
@@ -77,20 +87,20 @@ class TechPairsExtractor(DataExtractor):
 
         # Getting urls of first faces of first patterns of each person
         # new people
-        patt_inds = self.redisAPI.get_first_patterns_indexes_of_people(self.album_pk, new_people_inds)
+        patt_inds = RedisAPIAlbumDataGetter.get_first_patterns_indexes_of_people(self.album_pk, new_people_inds)
         new_face_urls = [self.request.build_absolute_uri(f"/media/temp_photos/album_{self.album_pk}/patterns/{x}/1.jpg")
-                     for x in patt_inds]
+                         for x in patt_inds]
 
         # old people
         old_people = People.objects.filter(pk__in=old_people_pks).prefetch_related('patterns_set__faces_set')
-        old_face_urls = [reverse('get_face_img', request=self.request) + '?face=' +
+        old_face_urls = [reverse('api_v1:face-img', request=self.request) + '?face=' +
                          old_people.get(pk=x).patterns_set.first().faces_set.first().slug for x in old_people_pks]
 
         data = {}
         for i in range(len(new_people_inds)):
-            new_person_data = {'name': f'person{new_people_inds[i]}', 'image': new_face_urls[i]}
+            new_person_data = {'name': f'person_{new_people_inds[i]}', 'image': new_face_urls[i]}
             old_person_data = {'pk': old_people_pks[i], 'image': old_face_urls[i]}
-            data.update({f'pair_{i}': {'new_person': new_person_data, 'old_person': old_person_data}})
+            data.update({f'pair_{i+1}': {'new_person': new_person_data, 'old_person': old_person_data}})
 
         return data
 
@@ -109,7 +119,7 @@ class SinglePeopleExtractor(DataExtractor):
         return data
 
     def _get_old_unpaired_people(self):
-        queryset = People.objects.prefetch_related('patterns_set__faces_set').filter(owner=self.request.owner)
+        queryset = People.objects.prefetch_related('patterns_set__faces_set').filter(owner=self.request.user)
 
         # Collecting already paired people with created people of this album
         paired = RedisAPIMatchesGetter.get_old_paired_people(self.album_pk)
@@ -120,7 +130,7 @@ class SinglePeopleExtractor(DataExtractor):
         for person in queryset:
             if person.pk not in paired:
                 old_ppl.append((person.pk,
-                                reverse('get_face_img', request=self.request) + '?face=' +
+                                reverse('api_v1:face-img', request=self.request) + '?face=' +
                                 person.patterns_set.first().faces_set.first().slug))
 
         return old_ppl

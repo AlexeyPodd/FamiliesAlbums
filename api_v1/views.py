@@ -405,7 +405,10 @@ class AlbumProcessingAPIView(APIView):
         serializer = self.get_serializer(data=request.data, data_collector=data_collector)
         serializer.is_valid(raise_exception=True)
 
-        data_collector.data = next(iter(serializer.validated_data.values()))
+        if 'start' in serializer.validated_data:
+            data_collector.data = serializer.validated_data
+        else:
+            data_collector.data = next(iter(serializer.validated_data.values()))
 
         manager = self.get_manager(data_collector, user=request.user)
         manager.run()
@@ -434,11 +437,11 @@ class AlbumProcessingAPIView(APIView):
             return serializer_class(data=data, data_collector=data_collector, context={'user': self.request.user})
 
     def get_manager(self, data_collector, user):
-        manager_class_stage = data_collector.stage + 1
-        if data_collector.data.get('start', False):
-            manager_class_stage = 0
+        next_stage = data_collector.stage + 1 if data_collector.stage else 0
+        if isinstance(data_collector.data, dict) and data_collector.data.get('start', False):
+            next_stage = 0
 
         try:
-            return self.manager_classes[manager_class_stage](data_collector, user)
+            return self.manager_classes[next_stage](data_collector, user)
         except KeyError:
             raise ValidationError("Invalid stage for getting album process manager.")
