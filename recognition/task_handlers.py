@@ -530,9 +530,11 @@ class SimilarPeopleSearchingHandler:
         return self.finish_message_template.replace("person_pk", str(self._person_pk))
 
     def handle(self):
+        self.redisAPI.set_person_searching(self._person_pk)
         self._owner_pk = People.objects.select_related('owner').get(pk=self._person_pk).owner.pk
         similar_people_pks = self._find_similar_people()
         self.redisAPI.set_founded_similar_people(person_pk=self._person_pk, pks=similar_people_pks)
+        self.redisAPI.set_person_not_searching(self._person_pk)
 
     def _find_similar_people(self):
         person_patterns = Patterns.objects.filter(person__pk=self._person_pk).select_related('central_face')

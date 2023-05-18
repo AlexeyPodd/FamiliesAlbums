@@ -615,7 +615,22 @@ class RedisAPISearchGetter:
         return int(redis_instance.get(f"person_{person_pk}_processed_patterns_amount"))
 
 
+class RedisAPISearchChecker:
+    @staticmethod
+    def is_person_searching(person_pk):
+        return redis_instance.exists(f"person_{person_pk}_searching")
+
+
 class RedisAPISearchSetter:
+    @staticmethod
+    def set_person_searching(person_pk):
+        redis_instance.set(f"person_{person_pk}_searching", 1)
+        redis_instance.expire(f"person_{person_pk}_searching", REDIS_DATA_EXPIRATION_SECONDS)
+
+    @staticmethod
+    def set_person_not_searching(person_pk):
+        redis_instance.delete(f"person_{person_pk}_searching")
+
     @staticmethod
     def encrease_patterns_search_amount(person_pk):
         redis_instance.incrby(f"person_{person_pk}_processed_patterns_amount")

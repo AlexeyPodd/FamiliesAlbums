@@ -5,7 +5,7 @@ from .auth_views import ActivateUserAPIView, PasswordResetFormView
 from .routers import FavoritesRouter, PeopleRouter
 from .views import MainPageAPIView, AlbumsViewSet, AnotherUserDetailAPIView, PhotoAPIView, FavoritesAlbumsViewSet, \
     FavoritesPhotosViewSet, PeopleViewSet, return_face_image_view, return_photo_with_framed_faces, \
-    RecognitionAlbumsListAPIView, AlbumProcessingAPIView
+    RecognitionAlbumsListAPIView, AlbumProcessingAPIView, SearchPersonAPIView
 
 app_name = 'api_v1'
 
@@ -34,6 +34,7 @@ urlpatterns = [
     path('recognition/', include(recognition_router.urls)),
     path('recognition/albums/', RecognitionAlbumsListAPIView.as_view(), name='recognition-albums'),
     path('recognition/processing/<slug:album_slug>/', AlbumProcessingAPIView.as_view(), name='recognition-processing'),
+    path('recognition/search/', SearchPersonAPIView.as_view(), name='people-search'),
     path('face-img/', return_face_image_view, name='face-img'),
     path('photo-with-frames/', return_photo_with_framed_faces, name='photo-with-frames'),
 ]

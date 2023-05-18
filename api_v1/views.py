@@ -18,7 +18,9 @@ from accounts.models import User
 from mainapp.utils import delete_from_favorites
 from photoalbums.settings import BASE_DIR
 from recognition.models import People, Faces
-from recognition.redis_interface.functional_api import RedisAPIPhotoDataGetter
+from recognition.tasks import recognition_task
+from recognition.redis_interface.functional_api import RedisAPIPhotoDataGetter, RedisAPISearchGetter, \
+    RedisAPISearchChecker, RedisAPISearchSetter
 from .data_collectors import RecognitionStateCollector
 from .managers import StartProcessingManager, VerifyFramesManager, VerifyPatternsManager, GroupPatternsManager, \
     VerifyTechPeopleMatchesManager, ManualMatchingPeopleManager
@@ -28,7 +30,8 @@ from .serializers.rec_processing_serializers import AlbumProcessingInfoSerialize
     VerifyFramesSerializer, VerifyPatternsSerializer, GroupPatternsSerializer, VerifyTechPeopleMatchesSerializer, \
     ManualMatchingPeopleSerializer
 from .serializers.serializers import MainPageSerializer, AlbumsListSerializer, AlbumPostAndDetailSerializer, \
-    PhotoDetailSerializer, PhotosListSerializer, PeopleListSerializer, PersonSerializer, RecognitionAlbumsSerializer
+    PhotoDetailSerializer, PhotosListSerializer, PeopleListSerializer, PersonSerializer, RecognitionAlbumsSerializer, \
+    FoundedPeopleSerializer, SearchStartOverSerializer
 from mainapp.models import Albums, Photos
 from mainapp.tasks import album_deletion_task
 from .utils import set_random_album_cover
@@ -445,3 +448,70 @@ class AlbumProcessingAPIView(APIView):
             return self.manager_classes[next_stage](data_collector, user)
         except KeyError:
             raise ValidationError("Invalid stage for getting album process manager.")
+
+
+class SearchPersonAPIView(APIView):
+    permission_classes = (IsOwner,)
+
+    def get(self, request, *args, **kwargs):
+        try:
+            self._person = self.get_object()
+        except ObjectDoesNotExist:
+            return Response({'error': 'Person not found'})
+
+        searching_now = RedisAPISearchChecker.is_person_searching(self._person.pk)
+        search_completed = bool(RedisAPISearchGetter.get_founded_similar_people(self._person.pk))
+
+        if not searching_now and not search_completed:
+            RedisAPISearchSetter.prepare_to_search(self._person.pk)
+            recognition_task.delay(self._person.pk, 0)
+            return Response(f'Search of people similar to {self._person.slug} started')
+
+        if searching_now:
+            processed_patterns_amount = RedisAPISearchGetter.get_searched_patterns_amount(self._person.pk)
+            total_patterns_amount = self._person.patterns_set.count()
+            return Response({
+                'searching_now': True,
+                'processed_patterns_amount': processed_patterns_amount,
+                'total_patterns_amount': total_patterns_amount,
+            })
+
+        if search_completed:
+            query_list = self.get_query_list()
+            serializer = FoundedPeopleSerializer(query_list, many=True)
+            return Response(serializer.data)
+
+    def post(self, request, *args, **kwargs):
+        try:
+            self._person = self.get_object()
+        except ObjectDoesNotExist:
+            return Response({'error': 'Person not found'})
+
+        serializer = SearchStartOverSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if RedisAPISearchChecker.is_person_searching(self._person.pk):
+            return Response({'error': 'Search is running now'})
+
+        RedisAPISearchSetter.prepare_to_search(self._person.pk)
+        recognition_task.delay(self._person.pk, 0)
+        return Response(f'Search of people similar to {self._person.slug} started')
+
+    def get_object(self):
+        person_slug = self.request.query_params.get('person')
+        if person_slug is None:
+            raise ValidationError("person slug was not specified")
+        obj = People.objects.get(slug=person_slug)
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def get_query_list(self):
+        nearest_people_pks = RedisAPISearchGetter.get_founded_similar_people(self._person.pk)
+        queryset = People.objects.prefetch_related('patterns_set__faces_set').select_related('owner')\
+            .filter(pk__in=nearest_people_pks)\
+            .annotate(
+                photos_amount=Count('patterns__faces__photo', distinct=True),
+                albums_amount=Count('patterns__faces__photo__album', distinct=True),
+            )
+        query_list = sorted(queryset, key=lambda p: nearest_people_pks.index(p.pk))
+        return query_list

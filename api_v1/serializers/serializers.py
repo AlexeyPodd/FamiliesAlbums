@@ -352,3 +352,40 @@ class RecognitionAlbumsSerializer(AlbumMiniatureMixin, serializers.ModelSerializ
             'public_photos_amount',
             # 'processing_url',
         )
+
+
+class FoundedPeopleSerializer(serializers.ModelSerializer):
+    url = serializers.HyperlinkedIdentityField(view_name='api_v1:people-detail', lookup_field='slug',
+                                               lookup_url_kwarg='person_slug')
+    face_image = serializers.SerializerMethodField()
+    pattern_images = serializers.SerializerMethodField()
+
+    class Meta:
+        model = People
+        fields = (
+            'name',
+            'url',
+            'face_image',
+            'pattern_images',
+            'photos_amount',
+            'albums_amount',
+        )
+
+    def get_face_image(self, person):
+        return reverse('api_v1:face-img', request=self.context['request']) + \
+            f'?face={person.patterns_set.first.faces_set.first.slug}'
+
+    def get_pattern_images(self, person):
+        patterns = person.patterns_set.all()[1:5]
+        image_urls = list(map(lambda p: reverse('api_v1:face-img',
+                                                request=self.context['request']) + p.faces_set.first.slug, patterns))
+        return image_urls
+
+
+class SearchStartOverSerializer(serializers.Serializer):
+    start = serializers.BooleanField()
+
+    def validate_start(self, value):
+        if not value:
+            raise serializers.ValidationError("start parameter must be set True.")
+        return value
