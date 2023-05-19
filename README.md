@@ -93,8 +93,9 @@ Redis stores the following keys:
 6. album_{pk}_finished: no_faces / 1
 
 **Searching for similar people**:
-1. person_{pk}_processed_patterns_amount: int
-2. nearest_people_to_{pk}: list: int
+1. person_{pk}_searching: bool
+2. person_{pk}_processed_patterns_amount: int
+3. nearest_people_to_{pk}: list: int
 
 ### API of site
 After completing the development of the server-side rendering site, it was also necessary to create an API using REST.
@@ -133,6 +134,9 @@ prefix - /api/v1/recognition/
 2. *user person's detail* people/\<slug:person_slug\> [GET, PUT] (put for name changing)
 3. *processing user's albums info* albums/ [GET]
 4. *management of album processing* processing/\<slug:album_slug\> [GET, POST] (all stages of processing, details below)
+5. *searching recognized person in other users photos* search/?person=\<slug:person_slug\> [GET] (first request will 
+start searching task, subsequent requests will return results of search)
+6. *search again, even if results are still available* search/ [POST] (need person slug, and start must be set true)
 
 **Support images endpoints**
 

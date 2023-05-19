@@ -316,7 +316,7 @@ class PersonSerializer(serializers.ModelSerializer):
     patterns_amount = serializers.IntegerField(read_only=True)
     photos_amount = serializers.IntegerField(read_only=True)
     albums_amount = serializers.IntegerField(read_only=True)
-    # search_url = serializers.SerializerMethodField()
+    search_url = serializers.SerializerMethodField()
 
     class Meta:
         model = People
@@ -326,22 +326,19 @@ class PersonSerializer(serializers.ModelSerializer):
             'patterns_amount',
             'photos_amount',
             'albums_amount',
-            # 'search_url',
+            'search_url',
             'patterns',
         )
 
-    # def get_search_url(self, person):
-    #     return reverse(
-    #         viewname='api_v1:search',
-    #         request=self.context['request'],
-    #         kwargs={'person_slug': person.slug},
-    #     )
+    def get_search_url(self, person):
+        return reverse('api_v1:people-search', request=self.context['request']) + f"?person={person.slug}"
 
 
 class RecognitionAlbumsSerializer(AlbumMiniatureMixin, serializers.ModelSerializer):
     processed_photos_amount = serializers.IntegerField(read_only=True)
     public_photos_amount = serializers.IntegerField(read_only=True)
     miniature_url = serializers.SerializerMethodField()
+    processing_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Albums
@@ -350,15 +347,21 @@ class RecognitionAlbumsSerializer(AlbumMiniatureMixin, serializers.ModelSerializ
             'miniature_url',
             'processed_photos_amount',
             'public_photos_amount',
-            # 'processing_url',
+            'processing_url',
         )
+
+    def get_processing_url(self, album):
+        return reverse('api_v1:recognition-processing', request=self.context['request'],
+                       kwargs={'album_slug': album.slug})
 
 
 class FoundedPeopleSerializer(serializers.ModelSerializer):
     url = serializers.HyperlinkedIdentityField(view_name='api_v1:people-detail', lookup_field='slug',
                                                lookup_url_kwarg='person_slug')
     face_image = serializers.SerializerMethodField()
-    pattern_images = serializers.SerializerMethodField()
+    patterns_images = serializers.SerializerMethodField()
+    photos_amount = serializers.IntegerField()
+    albums_amount = serializers.IntegerField()
 
     class Meta:
         model = People
@@ -366,19 +369,19 @@ class FoundedPeopleSerializer(serializers.ModelSerializer):
             'name',
             'url',
             'face_image',
-            'pattern_images',
+            'patterns_images',
             'photos_amount',
             'albums_amount',
         )
 
     def get_face_image(self, person):
         return reverse('api_v1:face-img', request=self.context['request']) + \
-            f'?face={person.patterns_set.first.faces_set.first.slug}'
+            f'?face={person.patterns_set.first().faces_set.first().slug}'
 
-    def get_pattern_images(self, person):
+    def get_patterns_images(self, person):
         patterns = person.patterns_set.all()[1:5]
         image_urls = list(map(lambda p: reverse('api_v1:face-img',
-                                                request=self.context['request']) + p.faces_set.first.slug, patterns))
+                                                request=self.context['request']) + p.faces_set.first().slug, patterns))
         return image_urls
 
 

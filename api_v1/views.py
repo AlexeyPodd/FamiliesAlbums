@@ -272,8 +272,8 @@ class PeopleViewSet(ModelViewSet):
 
     def get_queryset(self):
         if self.detail:
-            return People.objects.filter(owner=self.request.user).annotate(
-                patterns_amount=Count('patterns'),
+            return People.objects.all().annotate(
+                patterns_amount=Count('patterns', distinct=True),
                 photos_amount=Count('patterns__faces__photo', distinct=True),
                 albums_amount=Count('patterns__faces__photo__album', distinct=True),
             )
@@ -293,7 +293,8 @@ class RecognitionAlbumsListAPIView(ListAPIView):
 
     def get_queryset(self):
         return Albums.objects.filter(owner=self.request.user).annotate(
-            processed_photos_amount=Count('photos', filter=(Q(photos__is_private=False) & Q(photos__faces_extracted=True))),
+            processed_photos_amount=Count('photos', filter=(Q(photos__is_private=False) &
+                                                            Q(photos__faces_extracted=True))),
             public_photos_amount=Count('photos', filter=Q(photos__is_private=False)),
         )
 
@@ -478,7 +479,7 @@ class SearchPersonAPIView(APIView):
 
         if search_completed:
             query_list = self.get_query_list()
-            serializer = FoundedPeopleSerializer(query_list, many=True)
+            serializer = FoundedPeopleSerializer(query_list, many=True, context={'request': request})
             return Response(serializer.data)
 
     def post(self, request, *args, **kwargs):
@@ -498,7 +499,10 @@ class SearchPersonAPIView(APIView):
         return Response(f'Search of people similar to {self._person.slug} started')
 
     def get_object(self):
-        person_slug = self.request.query_params.get('person')
+        if self.request.method == 'GET':
+            person_slug = self.request.query_params.get('person')
+        elif self.request.method == 'POST':
+            person_slug = self.request.data.get('person')
         if person_slug is None:
             raise ValidationError("person slug was not specified")
         obj = People.objects.get(slug=person_slug)
