@@ -13,8 +13,8 @@ albums_router = SimpleRouter()
 albums_router.register(r'albums', AlbumsViewSet, basename='albums')
 
 favorites_router = FavoritesRouter()
-favorites_router.register(r'albums', FavoritesAlbumsViewSet, basename='favorites_albums')
-favorites_router.register(r'photos', FavoritesPhotosViewSet, basename='favorites_photos')
+favorites_router.register(r'albums', FavoritesAlbumsViewSet, basename='favorites-albums')
+favorites_router.register(r'photos', FavoritesPhotosViewSet, basename='favorites-photos')
 
 recognition_router = PeopleRouter()
 recognition_router.register(r'people', PeopleViewSet, basename='people')
