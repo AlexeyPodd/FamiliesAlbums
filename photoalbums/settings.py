@@ -34,11 +34,12 @@ CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000']
 # CSRF_TRUSTED_ORIGINS.extend(map(lambda host: f'http://{host}', ALLOWED_HOSTS))
 # CSRF_TRUSTED_ORIGINS.extend(map(lambda host: f'https://{host}', ALLOWED_HOSTS))
 
-# # SSL settings
-# SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-# SECURE_SSL_REDIRECT = True
-# SESSION_COOKIE_SECURE = True
-# CSRF_COOKIE_SECURE = True
+# SSL settings
+if bool(int(os.environ.get('HTTPS_ON', 0))):
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # Application definition
 INSTALLED_APPS = [
@@ -131,7 +132,7 @@ AUTH_PASSWORD_VALIDATORS = [
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
-        'rest_framework.renderers.BrowsableAPIRenderer',
+        # 'rest_framework.renderers.BrowsableAPIRenderer',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.TokenAuthentication',

@@ -13,3 +13,4 @@ nginx/
 celerybeat-schedule
 staticfiles/*
 __pycache__/
+**/tests/

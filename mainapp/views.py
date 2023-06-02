@@ -109,12 +109,12 @@ class UserAlbumsView(ListView):
         if self.request.user.is_authenticated and self.request.user.username_slug == self.kwargs['username_slug']:
             queryset = self.model.objects.filter(
                 owner__pk=self.request.user.pk,
-            ).select_related('miniature', 'owner').annotate(Count('photos'))
+            ).select_related('miniature', 'owner').annotate(Count('photos')).order_by('time_create')
         else:
             queryset = self.model.objects.filter(
                 owner__username_slug=self.kwargs['username_slug'],
                 is_private=False,
-            ).select_related('miniature', 'owner').annotate(Count('photos'))
+            ).select_related('miniature', 'owner').annotate(Count('photos')).order_by('time_create')
             if not queryset:
                 raise Http404
         return queryset
@@ -235,7 +235,7 @@ class AlbumCreateView(LoginRequiredMixin, CreateView):
 
     def get(self, request, *args, **kwargs):
         if request.user.username_slug != self.kwargs['username_slug']:
-            return redirect('create_album', username_slug=request.user.username_slug)
+            return redirect('album_create', username_slug=request.user.username_slug)
 
         self._check_albums_amount_limit()
 
@@ -243,7 +243,7 @@ class AlbumCreateView(LoginRequiredMixin, CreateView):
 
     def post(self, request, *args, **kwargs):
         if request.user.username_slug != self.kwargs['username_slug']:
-            return redirect('create_album', username_slug=request.user.username_slug)
+            return redirect('album_create', username_slug=request.user.username_slug)
 
         self._check_albums_amount_limit()
 
