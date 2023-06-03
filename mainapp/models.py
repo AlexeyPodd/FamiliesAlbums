@@ -16,8 +16,8 @@ class Albums(models.Model):
     description = models.CharField(max_length=1023, blank=True, verbose_name='Description')
     time_create = models.DateTimeField(auto_now_add=True, verbose_name="Date of creation")
     time_update = models.DateTimeField(auto_now=True, verbose_name="Last update date")
-    owner = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='owner', verbose_name='Owner')
-    in_users_favorites = models.ManyToManyField(AUTH_USER_MODEL, blank=True, related_name='album_in_users_favorites',
+    owner = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='albums', verbose_name='Owner')
+    in_users_favorites = models.ManyToManyField(AUTH_USER_MODEL, blank=True, related_name='albums_in_users_favorites',
                                                 verbose_name="In Users' Favorites")
     is_private = models.BooleanField(default=False, verbose_name='Privacy')
     miniature = models.OneToOneField('Photos', blank=True, null=True, on_delete=models.SET_NULL,
@@ -51,7 +51,7 @@ class Photos(models.Model):
     is_private = models.BooleanField(default=False, verbose_name='Privacy')
     album = models.ForeignKey('Albums', on_delete=models.CASCADE, verbose_name='Album')
     original = ResizedImageField(upload_to=get_photo_save_path, verbose_name="Original")
-    in_users_favorites = models.ManyToManyField(AUTH_USER_MODEL, blank=True, related_name='photo_in_users_favorites',
+    in_users_favorites = models.ManyToManyField(AUTH_USER_MODEL, blank=True, related_name='photos_in_users_favorites',
                                                 verbose_name="In Users' Favorites")
     faces_extracted = models.BooleanField(default=False, verbose_name='Processed')
 

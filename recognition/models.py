@@ -49,7 +49,7 @@ class Patterns(models.Model):
 class People(models.Model):
     """Model contains different facial patterns of one person."""
 
-    owner = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='user', verbose_name='User')
+    owner = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='people', verbose_name='User')
     name = models.CharField(max_length=100, verbose_name='Name')
     slug = AutoSlugField(populate_from='name', db_index=True, unique=True, verbose_name='Face URL')
 

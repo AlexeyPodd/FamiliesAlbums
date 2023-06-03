@@ -1,10 +1,13 @@
+import base64
+
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client
 from django.urls import reverse
 
 from accounts.models import User
 from mainapp.models import Albums, Photos
-from photoalbums.settings import ALBUMS_AMOUNT_LIMIT
+from photoalbums.settings import ALBUMS_AMOUNT_LIMIT, ALBUM_PHOTOS_AMOUNT_LIMIT
 
 
 class TestView(TestCase):
@@ -20,10 +23,15 @@ class TestView(TestCase):
     viewname = 'main'
     full_kwargs = {
         'username_slug': dummy_username,
-        'album_slug': dummy_album_title,
+        'album_slug': dummy_username + '-' + dummy_album_title,
         'photo_slug': dummy_photo_title,
     }
     url_variables = []
+    test_image = SimpleUploadedFile(
+            f"{dummy_photo_title}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
 
     @classmethod
     def setUpClass(cls):
@@ -44,8 +52,9 @@ class TestView(TestCase):
             )
             if 'album_slug' in cls.url_variables:
                 cls.album = Albums.objects.create(title=cls.dummy_album_title, owner=cls.user)
-                if 'photo_slug' in cls.url_variables:
-                    cls.photo = Photos.objects.create(title=cls.dummy_photo_title, album=cls.album)
+                cls.photo = Photos.objects.create(title=cls.dummy_photo_title, album=cls.album, original=cls.test_image)
+                cls.private_photo = Photos.objects.create(title=cls.dummy_photo_title, album=cls.album,
+                                                          is_private=True, original=cls.test_image)
 
         url_kwargs = {key: cls.full_kwargs.get(key) for key in cls.url_variables}
         cls.url = reverse(viewname=cls.viewname, kwargs=url_kwargs)
@@ -138,3 +147,128 @@ class TestAlbumCreateView(TestView):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, 404)
+
+    def test_POST_creates_new_album(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        creating_album_title = 'test_creating'
+
+        response = self.client.post(self.url, {'title': creating_album_title})
+
+        self.assertRedirects(
+            response,
+            reverse('album_edit', kwargs={'username_slug': self.user.username_slug,
+                                          'album_slug': f"{self.user.username_slug}-{creating_album_title}"}),
+        )
+        self.assertEqual(self.user.albums.first().title, creating_album_title)
+
+    def test_POST_no_data(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.user.albums.count(), 0)
+
+    def test_POST_riches_photos_amount_limit(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        creating_album_title = 'test_creating'
+        photo_files = [SimpleUploadedFile(
+            f"{i}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+                       for i in range(ALBUM_PHOTOS_AMOUNT_LIMIT + 1)]
+
+        response = self.client.post(self.url, {'title': creating_album_title, 'images': photo_files})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.user.albums.count(), 0)
+
+    def test_POST_uploaded_photos_created(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        creating_album_title = 'test_creating'
+        photo_files = [SimpleUploadedFile(
+            f"{i}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+                       for i in range(ALBUM_PHOTOS_AMOUNT_LIMIT)]
+
+        response = self.client.post(self.url, {'title': creating_album_title, 'images': photo_files})
+
+        self.assertEqual(response.status_code, 302)
+        photos = self.user.albums.first().photos_set.all()
+        self.assertEqual(photos.count(), ALBUM_PHOTOS_AMOUNT_LIMIT)
+
+    def test_POST_cover_set(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        creating_album_title = 'test_creating'
+        photo_files = [SimpleUploadedFile(
+            f"{i}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+                       for i in range(ALBUM_PHOTOS_AMOUNT_LIMIT)]
+
+        self.client.post(self.url, {'title': creating_album_title, 'images': photo_files})
+
+        self.assertIsNotNone(self.user.albums.first().miniature)
+
+
+class TestAlbumView(TestView):
+    viewname = 'album'
+    url_variables = ['username_slug', 'album_slug']
+
+    def test_GET(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'mainapp/album_photos.html')
+
+    def test_GET_private_album_visible_for_owner_only(self):
+        self.album.is_private = True
+        self.album.save()
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 404)
+
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_GET_private_photos_visible_for_owner_only(self):
+        response = self.client.get(self.url)
+        self.assertEqual(len(response.context["object_list"]), 1)
+
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        response = self.client.get(self.url)
+        self.assertEqual(len(response.context["object_list"]), 2)
+
+
+class TestAlbumEditView(TestView):
+    viewname = 'album_edit'
+    url_variables = ['username_slug', 'album_slug']
+
+    def test_GET_by_owner(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'mainapp/album_edit.html')
+
+    def test_GET_by_not_authorised(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_GET_by_not_owner(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.get(self.url)
+
+        self.assertRedirects(
+            response,
+            reverse('album', kwargs={'username_slug': self.user.username_slug,
+                                     'album_slug': self.album.slug}),
+        )
