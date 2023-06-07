@@ -1,9 +1,11 @@
 import base64
+import time
 
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client
 from django.urls import reverse
+from django.utils.datetime_safe import datetime
 
 from accounts.models import User
 from mainapp.models import Albums, Photos
@@ -27,11 +29,6 @@ class TestView(TestCase):
         'photo_slug': dummy_photo_title,
     }
     url_variables = []
-    test_image = SimpleUploadedFile(
-            f"{dummy_photo_title}.jpeg",
-            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
-                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
-                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
 
     @classmethod
     def setUpClass(cls):
@@ -50,17 +47,24 @@ class TestView(TestCase):
                 password=cls.dummy_2_password,
                 email=cls.dummy_2_email,
             )
-            if 'album_slug' in cls.url_variables:
-                cls.album = Albums.objects.create(title=cls.dummy_album_title, owner=cls.user)
-                cls.photo = Photos.objects.create(title=cls.dummy_photo_title, album=cls.album, original=cls.test_image)
-                cls.private_photo = Photos.objects.create(title=cls.dummy_photo_title, album=cls.album,
-                                                          is_private=True, original=cls.test_image)
 
         url_kwargs = {key: cls.full_kwargs.get(key) for key in cls.url_variables}
         cls.url = reverse(viewname=cls.viewname, kwargs=url_kwargs)
 
     def setUp(self):
         self.client = Client()
+
+        test_image = SimpleUploadedFile(
+            f"{self.dummy_photo_title}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+
+        if 'album_slug' in self.url_variables and 'username_slug' in self.url_variables:
+            self.album = Albums.objects.create(title=self.dummy_album_title, owner=self.user)
+            self.photo = Photos.objects.create(title=self.dummy_photo_title, album=self.album, original=test_image)
+            self.private_photo = Photos.objects.create(title=self.dummy_photo_title, album=self.album,
+                                                       is_private=True, original=test_image)
 
 
 class TestMainPageView(TestView):
@@ -272,3 +276,290 @@ class TestAlbumEditView(TestView):
             reverse('album', kwargs={'username_slug': self.user.username_slug,
                                      'album_slug': self.album.slug}),
         )
+
+    def test_POST_edit_album(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        new_album_title = self.album.title + '777'
+        data = {
+            'title': new_album_title,
+            'photos_set-TOTAL_FORMS': 2,
+            'photos_set-INITIAL_FORMS': 2,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': self.private_photo.is_private,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertRedirects(
+            response,
+            reverse('album', kwargs={'username_slug': self.user.username_slug,
+                                     'album_slug': self.album.slug}),
+        )
+        self.album.refresh_from_db()
+        self.assertEqual(self.album.title, new_album_title)
+
+    def test_POST_photo_deletion(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        data = {
+            'title': self.album.title,
+            'photos_set-TOTAL_FORMS': 2,
+            'photos_set-INITIAL_FORMS': 2,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': self.private_photo.is_private,
+            'photos_set-1-DELETE': True,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertRedirects(
+            response,
+            reverse('album', kwargs={'username_slug': self.user.username_slug,
+                                     'album_slug': self.album.slug}),
+        )
+        self.album.refresh_from_db()
+        self.assertEqual(self.album.photos_set.count(), 1)
+
+    def test_POST_uploaded_photos_created(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        photo_files = [SimpleUploadedFile(
+            f"{i}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+                       for i in range(ALBUM_PHOTOS_AMOUNT_LIMIT - 2)]
+
+        data = {
+            'title': self.album.title,
+            'images': photo_files,
+            'photos_set-TOTAL_FORMS': 2,
+            'photos_set-INITIAL_FORMS': 2,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': self.private_photo.is_private,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertRedirects(response, self.url)
+        self.album.refresh_from_db()
+        self.assertEqual(self.album.photos_set.count(), ALBUM_PHOTOS_AMOUNT_LIMIT)
+
+    def test_POST_uploaded_photos_limit_reached(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        photo_files = [SimpleUploadedFile(
+            f"{i}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+                        for i in range(ALBUM_PHOTOS_AMOUNT_LIMIT)]
+
+        data = {
+            'title': self.album.title,
+            'images': photo_files,
+            'photos_set-TOTAL_FORMS': 2,
+            'photos_set-INITIAL_FORMS': 2,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': self.private_photo.is_private,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertEqual(response.status_code, 200)
+        self.album.refresh_from_db()
+        self.assertEqual(self.album.photos_set.count(), 2)
+
+    def test_POST_photos_dates_earlier_than_album(self):
+        test_image = SimpleUploadedFile(
+            f"{self.dummy_photo_title}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        earlier_photo = Photos.objects.create(
+            title='earlier_photo',
+            date_start=datetime.strptime('17/07/2018', '%d/%m/%Y'),
+            album_id=self.album.pk,
+            original=test_image,
+        )
+
+        data = {
+            'title': self.album.title,
+            'date_start_day': 1,
+            'date_start_month': 1,
+            'date_start_year': 2019,
+            'photos_set-TOTAL_FORMS': 3,
+            'photos_set-INITIAL_FORMS': 3,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': self.private_photo.is_private,
+            'photos_set-2-id': earlier_photo.pk,
+            'photos_set-2-title': earlier_photo.title,
+            'photos_set-2-date_start_day': 17,
+            'photos_set-2-date_start_month': 7,
+            'photos_set-2-date_start_year': 2018,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_POST_photos_dates_later_than_album(self):
+        test_image = SimpleUploadedFile(
+            f"{self.dummy_photo_title}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        later_photo = Photos.objects.create(
+            title='later_photo',
+            date_end=datetime.strptime('17/07/2018', '%d/%m/%Y'),
+            album_id=self.album.pk,
+            original=test_image,
+        )
+
+        data = {
+            'title': self.album.title,
+            'date_end_day': 1,
+            'date_end_month': 1,
+            'date_end_year': 2015,
+            'photos_set-TOTAL_FORMS': 3,
+            'photos_set-INITIAL_FORMS': 3,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': self.private_photo.is_private,
+            'photos_set-2-id': later_photo.pk,
+            'photos_set-2-title': later_photo.title,
+            'photos_set-2-date_end_day': 17,
+            'photos_set-2-date_end_month': 7,
+            'photos_set-2-date_end_year': 2018,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_POST_set_cover_for_empty_album_when_upload_photos(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        self.photo.delete()
+        self.private_photo.delete()
+        image = SimpleUploadedFile(
+            f"{self.dummy_photo_title}.jpeg",
+            base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAUA" +
+                             "AAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDIBKE0DHxgljNBAAO" +
+                             "9TXL0Y4OHwAAAABJRU5ErkJggg=="), content_type="image/jpeg")
+
+        data = {
+            'title': self.album.title,
+            'images': [image],
+            'photos_set-TOTAL_FORMS': 0,
+            'photos_set-INITIAL_FORMS': 0,
+        }
+        response = self.client.post(self.url, data)
+
+        self.album.refresh_from_db()
+        self.assertRedirects(response, self.url)
+        self.assertIsNotNone(self.album.miniature)
+        self.assertEqual(self.album.miniature.title, self.dummy_photo_title)
+
+    def test_POST_set_new_cover_when_deleting_old(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        self.album.miniature = self.photo
+        self.private_photo.is_private = False
+        self.album.save()
+        self.private_photo.save()
+
+        data = {
+            'title': self.album.title,
+            'miniature': self.album.miniature.pk,
+            'photos_set-TOTAL_FORMS': 2,
+            'photos_set-INITIAL_FORMS': 2,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-0-DELETE': True,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertRedirects(
+            response,
+            reverse('album', kwargs={'username_slug': self.user.username_slug,
+                                     'album_slug': self.album.slug}),
+        )
+        self.album.refresh_from_db()
+        self.assertFalse(Photos.objects.filter(pk=self.photo.pk).exists())
+        self.assertIsNotNone(self.album.miniature)
+        self.assertEqual(self.album.miniature, self.private_photo)
+
+    def test_POST_set_new_cover_when_old_become_private(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        self.private_photo.is_private = False
+        self.private_photo.save()
+        self.album.miniature = self.private_photo
+        self.album.save()
+
+        data = {
+            'title': self.album.title,
+            'miniature': self.album.miniature.pk,
+            'photos_set-TOTAL_FORMS': 2,
+            'photos_set-INITIAL_FORMS': 2,
+            'photos_set-0-id': self.photo.pk,
+            'photos_set-0-title': self.photo.title,
+            'photos_set-1-id': self.private_photo.pk,
+            'photos_set-1-title': self.private_photo.title,
+            'photos_set-1-is_private': True,
+        }
+        response = self.client.post(self.url, data)
+
+        self.assertRedirects(
+            response,
+            reverse('album', kwargs={'username_slug': self.user.username_slug,
+                                     'album_slug': self.album.slug}),
+        )
+        self.private_photo.refresh_from_db()
+        self.album.refresh_from_db()
+        self.assertTrue(self.private_photo.is_private)
+        self.assertIsNotNone(self.album.miniature)
+        self.assertEqual(self.album.miniature, self.photo)
+
+
+class TestPhotoView(TestView):
+    viewname = 'photo'
+    url_variables = ['username_slug', 'album_slug', 'photo_slug']
+
+    def test_GET(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'mainapp/photo.html')
+
+    def test_GET_private_album_visible_for_owner_only(self):
+        self.photo.is_private = True
+        self.photo.save()
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 404)
+
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_GET_incorrect_album_slug(self):
+        url_kwargs = self.full_kwargs.copy()
+        url_kwargs['album_slug'] = 'incorrect_album_slug'
+        url = reverse(self.viewname, kwargs=url_kwargs)
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, 404)

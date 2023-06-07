@@ -5,7 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseNotFound, Http404, HttpResponseRedirect, FileResponse, HttpResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, get_object_or_404
 from django.templatetags.static import static
 from django.urls import reverse_lazy
 from django.views.generic import ListView, TemplateView, CreateView, UpdateView
@@ -178,7 +178,7 @@ class PhotoView(DetailView):
     slug_url_kwarg = 'photo_slug'
 
     def get(self, request, *args, **kwargs):
-        self.album = Albums.objects.get(slug=kwargs['album_slug'])
+        self.album = get_object_or_404(Albums, slug=kwargs['album_slug'])
         self.object = self.get_object(queryset=self.model.objects.filter(album_id=self.album.pk))
 
         if (not request.user.is_authenticated or request.user.username_slug != kwargs['username_slug']) and \
@@ -200,9 +200,8 @@ class PhotoView(DetailView):
         })
         
         if self.request.user.is_authenticated:
-            in_favorites = self.object.in_users_favorites.filter(
-                username_slug=self.request.user.username_slug,
-            ).exists() or\
+            in_favorites = self.object.in_users_favorites\
+                               .filter(username_slug=self.request.user.username_slug).exists() or\
                 self.object.album.in_users_favorites.filter(username_slug=self.request.user.username_slug).exists()
             context.update({'in_favorites': in_favorites})
             
@@ -374,15 +373,13 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
 
         self.object = form.save()
 
-        # Adding uploaded photos to album and choosing random cover
-        had_photos = self.object.photos_set.exists()
+        # If album were empty - one of uploaded photos will be new cover
+        need_new_cover = not self.object.photos_set.exists()
+
+        # Adding uploaded photos to album
         self._add_images_to_album_object(form)
-        if not had_photos:
-            self._set_random_album_cover()
 
         self.photos_formset.save()
-
-        need_new_cover = False
 
         # deleting marked objects
         for delete_value in self.photos_formset.deleted_objects:
@@ -397,10 +394,7 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
 
         # Set new album cover, if needed
         if need_new_cover:
-            cover = self.object.photos_set.filter(is_private=False).order_by('?').first()
-            if cover:
-                self.object.miniature = cover
-                self.object.save()
+            self._set_random_album_cover()
 
         return HttpResponseRedirect(self.get_success_url())
 
@@ -443,9 +437,10 @@ class AlbumEditView(LoginRequiredMixin, UpdateView):
             self.object.photos_set.add(photo, bulk=False)
 
     def _set_random_album_cover(self):
-        cover = self.object.photos_set.order_by('?').first()
+        cover = self.object.photos_set.filter(is_private=False).order_by('?').first()
         if cover:
             self.object.miniature = cover
+            self.object.save()
 
     @staticmethod
     def _get_photos_title(filename):
