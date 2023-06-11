@@ -507,7 +507,7 @@ class FavoritesView(LoginRequiredMixin, ListView):
 
     def get(self, request, *args, **kwargs):
         if request.user.username_slug != self.kwargs['username_slug']:
-            raise Http404
+            return redirect('favorites', username_slug=request.user.username_slug)
 
         return super().get(request, *args, **kwargs)
 
@@ -528,19 +528,19 @@ class FavoritesPhotosView(LoginRequiredMixin, ListView):
 
         context.update({'title': 'My Favorites Photos',
                         'current_section': 'favorites',
-                        'my_albums': Albums.objects.filter(owner__username_slug=self.request.user.username_slug),
+                        'my_albums': Albums.objects.filter(owner=self.request.user),
                         })
         return context
 
     def get(self, request, *args, **kwargs):
         if request.user.username_slug != self.kwargs['username_slug']:
-            raise Http404
+            return redirect('favorites_photos', username_slug=request.user.username_slug)
 
         return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.model.objects.select_related('album__owner').filter(
-            in_users_favorites__username_slug=self.request.user.username_slug,
+            in_users_favorites=self.request.user,
         )
 
 

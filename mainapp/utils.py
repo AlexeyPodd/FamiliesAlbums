@@ -29,9 +29,21 @@ def get_zip(album, private_access=False):
     else:
         photos = album.photos_set.filter(is_private=False)
 
+    photos_filename_titles = []
     for photo in photos:
         filepath = os.path.abspath(os.path.join(BASE_DIR, photo.original.url[1:]))
-        archive.write(filepath, f'{photo.title}{os.path.splitext(filepath)[-1]}')
+        file_title = photo.title
+
+        # Making sure filename is uniq
+        if file_title in photos_filename_titles:
+            i = 1
+            while file_title + f"({i})" in photos_filename_titles:
+                i += 1
+            file_title += f"({i})"
+        photos_filename_titles.append(file_title)
+
+        filename = file_title + os.path.splitext(filepath)[-1]
+        archive.write(filepath, filename)
 
     archive.close()
     temp.seek(0)
