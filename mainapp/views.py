@@ -590,11 +590,19 @@ def remove_from_favorites(request):
         return HttpResponse(status=400)
 
     if request.POST.get('photo'):
-        photo = Photos.objects.get(slug=request.POST.get('photo'))
+        try:
+            photo = Photos.objects.get(slug=request.POST.get('photo'))
+        except ObjectDoesNotExist:
+            raise Http404
+
         delete_from_favorites(request.user, photo)
 
     if request.POST.get('album'):
-        album = Albums.objects.get(slug=request.POST.get('album'))
+        try:
+            album = Albums.objects.get(slug=request.POST.get('album'))
+        except ObjectDoesNotExist:
+            raise Http404
+
         delete_from_favorites(request.user, album)
 
     return HttpResponseRedirect(request.POST.get('next', '/'))
@@ -668,7 +676,9 @@ def save_album(request):
         photo.album = album
         photo.save()
 
-    album.miniature = Photos.objects.get(original=Albums.objects.get(slug=album_slug).miniature.original, album=album)
-    album.save()
+    miniature = Albums.objects.get(slug=album_slug).miniature
+    if miniature is not None:
+        album.miniature = Photos.objects.get(original=miniature.original, album=album)
+        album.save()
 
     return redirect('user_albums', username_slug=request.user.username_slug)

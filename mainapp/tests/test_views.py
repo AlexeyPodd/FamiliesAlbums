@@ -832,20 +832,14 @@ class TestAddToFavorites(TestManagementView):
 
         response = self.client.post(self.url, {'album': self.album.slug, 'next': reverse('about')})
 
-        self.assertRedirects(
-            response,
-            reverse('about')
-        )
+        self.assertRedirects(response,reverse('about'))
 
     def test_POST_redirected_default(self):
         self.client.login(username=self.dummy_username, password=self.dummy_password)
 
         response = self.client.post(self.url, {'album': self.album.slug})
 
-        self.assertRedirects(
-            response,
-            reverse('main')
-        )
+        self.assertRedirects(response, reverse('main'))
 
     def test_POST_not_existing_photo(self):
         self.client.login(username=self.dummy_username, password=self.dummy_password)
@@ -877,3 +871,228 @@ class TestAddToFavorites(TestManagementView):
 
         self.private_photo.refresh_from_db()
         self.assertEqual(self.private_photo.in_users_favorites.count(), 0)
+
+
+class TestRemoveFromFavorites(TestManagementView):
+    viewname = 'remove_from_favorites'
+
+    def test_GET_not_authorised(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_GET_404(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_not_specified_photo_or_album(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_POST_not_existing_album(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.post(self.url, {'album': 'not_existing'})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_not_existing_photo(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.post(self.url, {'photo': 'not_existing'})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_delete_not_favorite_album_from_favorites(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'album': self.album.slug})
+
+        self.assertRedirects(response, reverse('main'))
+        self.album.refresh_from_db()
+        self.assertEqual(self.album.in_users_favorites.count(), 0)
+
+    def test_POST_redirected_to_specified_url(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'album': self.album.slug, 'next': reverse('about')})
+
+        self.assertRedirects(response, reverse('about'))
+
+    def test_POST_redirected_default(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'album': self.album.slug})
+
+        self.assertRedirects(response, reverse('main'))
+
+    def test_POST_delete_album_from_favorites(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        self.album.in_users_favorites.add(self.second_user)
+        self.album.save()
+
+        response = self.client.post(self.url, {'album': self.album.slug})
+
+        self.album.refresh_from_db()
+        self.assertEqual(self.album.in_users_favorites.count(), 0)
+
+    def test_POST_delete_photo_from_favorites(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        self.photo.in_users_favorites.add(self.second_user)
+        self.photo.save()
+
+        response = self.client.post(self.url, {'photo': self.photo.slug})
+
+        self.photo.refresh_from_db()
+        self.assertEqual(self.photo.in_users_favorites.count(), 0)
+
+
+class TestSavePhotoToAlbum(TestManagementView):
+    viewname = 'save_photo_to_album'
+
+    def test_GET_not_authorised(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_GET_404(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_no_data(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_POST_wrong_data(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'data': 'jfdjifjig'})
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_POST_not_not_existing_photo_and_album(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'data': 'photo:pslfpsldf, album:sdopkfopk'})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_photo_is_not_in_user_favorites(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        album = Albums.objects.create(title='test_user2', owner=self.second_user)
+
+        response = self.client.post(self.url, {'data': f'photo:{self.photo.slug}, album:{album.slug}'})
+
+        self.assertEqual(response.status_code, 400)
+        album.refresh_from_db()
+        self.assertEqual(album.photos_set.count(), 0)
+
+    def test_POST_same_photo_exists_in_this_album(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        album = Albums.objects.create(title='test_user2', owner=self.second_user)
+        Photos.objects.create(title='test_photo_user2', album=album, original=self.photo.original)
+        self.photo.in_users_favorites.add(self.second_user)
+        self.photo.save()
+
+        response = self.client.post(self.url, {'data': f'photo:{self.photo.slug}, album:{album.slug}'})
+
+        self.assertEqual(response.status_code, 204)
+        album.refresh_from_db()
+        self.assertEqual(album.photos_set.count(), 1)
+
+    def test_POST_successful_save(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        album = Albums.objects.create(title='test_user2', owner=self.second_user)
+        self.photo.in_users_favorites.add(self.second_user)
+        self.photo.save()
+
+        response = self.client.post(self.url, {'data': f'photo:{self.photo.slug}, album:{album.slug}'})
+
+        album.refresh_from_db()
+        self.assertEqual(album.photos_set.count(), 1)
+
+    def test_POST_redirected_to_specified_url(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        album = Albums.objects.create(title='test_user2', owner=self.second_user)
+        self.photo.in_users_favorites.add(self.second_user)
+        self.photo.save()
+
+        response = self.client.post(self.url, {'data': f'photo:{self.photo.slug}, album:{album.slug}',
+                                               'next': reverse('about')})
+
+        self.assertRedirects(response, reverse('about'))
+
+    def test_POST_redirected_default(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        album = Albums.objects.create(title='test_user2', owner=self.second_user)
+        self.photo.in_users_favorites.add(self.second_user)
+        self.photo.save()
+
+        response = self.client.post(self.url, {'data': f'photo:{self.photo.slug}, album:{album.slug}'})
+
+        self.assertRedirects(response, reverse('main'))
+
+
+class TestSavAlbum(TestManagementView):
+    viewname = 'save_album'
+
+    def test_GET_not_authorised(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 302)
+
+    def test_GET_404(self):
+        self.client.login(username=self.dummy_username, password=self.dummy_password)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_album_not_specified(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url)
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_POST_not_existing_or_private_album(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'album': 'utsdopkfopk'})
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_POST_album_is_not_in_user_favorites(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+
+        response = self.client.post(self.url, {'album': self.album.slug})
+
+        self.assertEqual(response.status_code, 400)
+        self.second_user.refresh_from_db()
+        self.assertEqual(self.second_user.albums.count(), 0)
+
+    def test_POST_successful_save(self):
+        self.client.login(username=self.dummy_2_username, password=self.dummy_2_password)
+        self.album.in_users_favorites.add(self.second_user)
+        self.album.miniature = self.photo
+        self.album.save()
+
+        response = self.client.post(self.url, {'album': self.album.slug})
+
+        self.second_user.refresh_from_db()
+        self.assertEqual(self.second_user.albums.count(), 1)
+        self.assertEqual(self.second_user.albums.first().photos_set.count(), 1)
+        self.assertIsNotNone(self.second_user.albums.first().miniature)
+        self.assertRedirects(response, reverse('user_albums', kwargs={'username_slug': self.second_user.username_slug}))
